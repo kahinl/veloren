@@ -39,9 +39,9 @@ jobs:
         run: gradle wrapper
 
       - name: Install Android NDK
-        uses: nttld/setup-ndk@v1
+        uses: actions/setup-android@v4
         with:
-          ndk-version: r27c
+          ndk: r27c
 
       - name: Install Java
         uses: actions/setup-java@v4
