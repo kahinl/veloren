@@ -2,7 +2,6 @@ use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JObject, JString};
 use jni::sys::{jfloat, jint, jlong};
 use std::path::PathBuf;
-use std::ptr::null_mut;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -27,15 +26,15 @@ use veloren_common::comp::controller::{ControllerInputs, InputKind};
 use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
-/// The Veloren client instance, stored as a raw pointer across JNI calls.
-static CLIENT: OnceLock<Mutex<Option<*mut Client>>> = OnceLock::new();
+/// The Veloren client instance, stored as a Box in static storage.
+static CLIENT: OnceLock<Mutex<Option<Box<Client>>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
-/// The wgpu renderer instance, stored as a raw pointer across JNI calls.
-static RENDERER: OnceLock<Mutex<Option<*mut renderer::Renderer>>> = OnceLock::new();
+/// The wgpu renderer instance, stored as a Box in static storage.
+static RENDERER: OnceLock<Mutex<Option<Box<renderer::Renderer>>>> = OnceLock::new();
 
-/// The Android AAssetManager, stored for asset loading.
+/// The Android AAssetManager, stored as a raw pointer in static storage.
 #[cfg(target_os = "android")]
 static ASSET_MANAGER: OnceLock<Mutex<Option<*mut ndk_sys::AAssetManager>>> = OnceLock::new();
 
@@ -43,7 +42,7 @@ static ASSET_MANAGER: OnceLock<Mutex<Option<*mut ndk_sys::AAssetManager>>> = Onc
 #[cfg(target_os = "android")]
 static ASSET_CACHE: OnceLock<Mutex<Option<assets_manager::AssetCache>>> = OnceLock::new();
 
-fn client_storage() -> &'static Mutex<Option<*mut Client>> {
+fn client_storage() -> &'static Mutex<Option<Box<Client>>> {
     CLIENT.get_or_init(|| Mutex::new(None))
 }
 
@@ -55,7 +54,7 @@ fn last_tick_storage() -> &'static Mutex<Option<Instant>> {
     LAST_TICK.get_or_init(|| Mutex::new(None))
 }
 
-fn renderer_storage() -> &'static Mutex<Option<*mut renderer::Renderer>> {
+fn renderer_storage() -> &'static Mutex<Option<Box<renderer::Renderer>>> {
     RENDERER.get_or_init(|| Mutex::new(None))
 }
 
@@ -111,11 +110,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     });
 
     match client_result {
-        Ok(mut client) => {
-            let boxed = Box::new(client);
-            let ptr = Box::into_raw(boxed) as *mut Client;
-
-            client_storage().lock().unwrap().replace(ptr);
+        Ok(client) => {
+            client_storage().lock().unwrap().replace(Some(client));
             runtime_storage().lock().unwrap().replace(runtime);
             last_tick_storage().lock().unwrap().replace(Instant::now());
 
@@ -137,8 +133,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     _class: JClass,
     dt: jfloat,
 ) -> jint {
-    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
-    let Some(client_ptr) = client_ptr else {
+    let mut client_guard = client_storage().lock().unwrap();
+    let Some(client) = client_guard.as_mut() else {
         return -1;
     };
 
@@ -152,7 +148,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
 
     let inputs = ControllerInputs::default();
 
-    let client = unsafe { &mut *client_ptr };
     match client.tick(inputs, elapsed) {
         Ok(events) => {
             // Forward events to Java callback if registered
@@ -186,10 +181,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
         }
     };
 
-    let boxed = Box::new(renderer);
-    let ptr = Box::into_raw(boxed) as *mut renderer::Renderer;
-
-    renderer_storage().lock().unwrap().replace(ptr);
+    renderer_storage().lock().unwrap().replace(Some(renderer));
     0
 }
 
@@ -200,16 +192,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    let renderer_ptr = renderer_storage()
-        .lock()
-        .unwrap()
-        .as_ref()
-        .copied();
-    let Some(renderer_ptr) = renderer_ptr else {
+    let mut renderer_guard = renderer_storage().lock().unwrap();
+    let Some(renderer) = renderer_guard.as_mut() else {
         return -1;
     };
 
-    let renderer = unsafe { &mut *renderer_ptr };
     match renderer.render() {
         Ok(()) => 0,
         Err(e) => {
@@ -228,16 +215,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
     width: jint,
     height: jint,
 ) {
-    let renderer_ptr = renderer_storage()
-        .lock()
-        .unwrap()
-        .as_ref()
-        .copied();
-    let Some(renderer_ptr) = renderer_ptr else {
+    let mut renderer_guard = renderer_storage().lock().unwrap();
+    let Some(renderer) = renderer_guard.as_mut() else {
         return;
     };
 
-    let renderer = unsafe { &mut *renderer_ptr };
     renderer.resize(width as u32, height as u32);
 }
 
@@ -329,15 +311,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
     _env: JNIEnv,
     _class: JClass,
 ) {
-    if let Some(ptr) = renderer_storage().lock().unwrap().take() {
-        unsafe {
-            drop(Box::from_raw(ptr));
-        }
+    if let Some(renderer) = renderer_storage().lock().unwrap().take() {
+        drop(renderer);
     }
-    if let Some(ptr) = client_storage().lock().unwrap().take() {
-        unsafe {
-            drop(Box::from_raw(ptr));
-        }
+    if let Some(client) = client_storage().lock().unwrap().take() {
+        drop(client);
     }
     runtime_storage().lock().unwrap().take();
     last_tick_storage().lock().unwrap().take();
@@ -361,8 +339,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     action: jint,
     pressed: jboolean,
 ) {
-    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
-    let Some(client_ptr) = client_ptr else {
+    let mut client_guard = client_storage().lock().unwrap();
+    let Some(client) = client_guard.as_mut() else {
         return;
     };
 
@@ -380,7 +358,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
         _ => InputKind::Primary,
     };
 
-    let client = unsafe { &mut *client_ptr };
     client.handle_input(input_kind, pressed != 0, None, None);
 
     if let Some(controller) = client
@@ -400,9 +377,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
-    match client_ptr {
-        Some(ptr) => unsafe { (&*ptr).get_tick() as jint },
+    let client_guard = client_storage().lock().unwrap();
+    match client_guard.as_ref() {
+        Some(client) => client.get_tick() as jint,
         None => -1,
     }
 }
@@ -416,8 +393,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
     _class: JClass,
     tier: jint,
 ) {
-    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
-    let Some(client_ptr) = client_ptr else {
+    let mut client_guard = client_storage().lock().unwrap();
+    let Some(client) = client_guard.as_mut() else {
         return;
     };
 
@@ -427,7 +404,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
         _ => veloren_client::MobilePerfTier::None,
     };
 
-    let client = unsafe { &mut *client_ptr };
     client.set_mobile_perf_tier(perf_tier);
 }
 
