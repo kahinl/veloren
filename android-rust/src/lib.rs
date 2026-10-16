@@ -305,7 +305,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
             .unwrap_or_else(|_| JObject::null());
     };
 
-    match cache.load_owned::<String>(format!("{id}.{ext}").as_str()) {
+    match cache.load_owned::<Box<str>>(format!("{id}.{ext}").as_str()) {
         Ok(bytes) => match env.byte_array_from_slice(bytes.as_bytes()) {
             Ok(arr) => arr.into(),
             Err(_) => JObject::null(),

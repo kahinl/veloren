@@ -3,7 +3,7 @@ use std::io;
 use std::ptr::NonNull;
 
 use assets_manager::{
-    source::{DirEntry, Source},
+    source::{DirEntry, FileContent, Source},
     BoxedError,
 };
 
