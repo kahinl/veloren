@@ -107,9 +107,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     });
 
     match client_result {
-        Ok(mut client) => {
-            let boxed = Box::new(client);
-            let ptr = Box::into_raw(boxed) as *mut Client as i64;
+        ptr if !ptr.is_null() => {
             *client_storage().lock().unwrap() = Some(ptr);
             *last_tick_storage().lock().unwrap() = Some(Instant::now());
 
