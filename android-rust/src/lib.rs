@@ -1,6 +1,6 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JObject, JString};
-use jni::sys::{jfloat, jint, jlong};
+use jni::sys::{jboolean, jfloat, jint, jlong};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
@@ -19,7 +19,7 @@ mod renderer;
 mod voxygen_bridge;
 
 use veloren_client::Client;
-use veloren_client::init::{CredentialProvider, Credentials};
+use veloren_client::{CredentialProvider, Credentials};
 use veloren_client::ClientType;
 use veloren_client::addr::ConnectionArgs;
 use veloren_common::comp::controller::{ControllerInputs, InputKind};
@@ -37,7 +37,7 @@ static RENDERER: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 
 /// The Android AAssetManager, stored as raw pointer.
 #[cfg(target_os = "android")]
-static ASSET_MANAGER: OnceLock<Mutex<Option<*mut ndk_sys::AAssetManager>>> = OnceLock::new();
+static ASSET_MANAGER: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 
 /// The Android asset cache.
 #[cfg(target_os = "android")]
@@ -63,6 +63,12 @@ fn renderer_storage() -> &'static Mutex<Option<jlong>> {
 fn asset_manager_storage() -> &'static Mutex<Option<jlong>> {
     ASSET_MANAGER.get_or_init(|| Mutex::new(None))
 }
+
+/// Wrapper to make `*mut ndk_sys::AAssetManager` Send + Sync for static storage.
+struct AssetManagerPtr(*mut ndk_sys::AAssetManager);
+
+unsafe impl Send for AssetManagerPtr {}
+unsafe impl Sync for AssetManagerPtr {}
 
 #[cfg(target_os = "android")]
 fn asset_cache_storage() -> &'static Mutex<Option<assets_manager::AssetCache>> {

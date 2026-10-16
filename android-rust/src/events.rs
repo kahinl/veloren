@@ -1,7 +1,9 @@
 use jni::JNIEnv;
-use jni::objects::{JObject, JString};
+use jni::objects::{JClass, JObject, JString};
 use jni::sys::{jint, jmethodID};
 use std::sync::{Mutex, OnceLock};
+
+use veloren_client::Client;
 
 /// Stores the Java callback object and method ID for sending events from Rust to Java.
 static EVENT_CALLBACK: OnceLock<std::sync::Mutex<Option<EventCallback>>> = OnceLock::new();
@@ -111,7 +113,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
 
     match etype.as_str() {
         "chat" => {
-            let client = unsafe { client_ptr.as_mut() };
+            let client = unsafe { &mut *(*client_ptr as *mut Client) };
             client.send_chat(edata);
             0
         }
@@ -119,7 +121,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
             let parts: Vec<&str> = edata.split_whitespace().collect();
             if let Some(name) = parts.first() {
                 let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
-                let client = unsafe { client_ptr.as_mut() };
+                let client = unsafe { &mut *(*client_ptr as *mut Client) };
                 client.send_command(name.to_string(), args);
             }
             0

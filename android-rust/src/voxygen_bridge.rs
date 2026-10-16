@@ -13,6 +13,9 @@ struct VoxygenRendererState {
     initialized: bool,
 }
 
+unsafe impl Send for VoxygenRendererState {}
+unsafe impl Sync for VoxygenRendererState {}
+
 fn voxygen_renderer_storage() -> &'static Mutex<Option<*mut VoxygenRendererState>> {
     VOXEGON_RENDERER.get_or_init(|| Mutex::new(None))
 }

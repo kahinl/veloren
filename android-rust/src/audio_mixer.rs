@@ -1,6 +1,6 @@
 use jni::JNIEnv;
-use jni::objects::JByteArray;
-use jni::sys::jint;
+use jni::objects::{JByteArray, JClass};
+use jni::sys::{jfloat, jint};
 use std::f32::consts::PI;
 use std::sync::OnceLock;
 
@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 /// enqueuing into OpenSL ES via `velorenAudioPush`.
 pub struct AudioMixer {
     sample_rate: u32,
-    sources: Vec<Box<dyn AudioSource>>,
+    sources: Vec<Box<dyn AudioSource + Send>>,
     master_volume: f32,
 }
 

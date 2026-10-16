@@ -25,6 +25,9 @@ pub struct Audio {
     callback: Option<AudioCallback>,
 }
 
+unsafe impl Send for Audio {}
+unsafe impl Sync for Audio {}
+
 /// Callback info so Rust can notify Java when more audio data is needed.
 struct AudioCallback {
     /// Global reference to the Java object that implements the audio callback.
@@ -32,6 +35,9 @@ struct AudioCallback {
     /// Method ID of `onAudioBufferNeeded(buffer: ByteArray)` on that object.
     method_id: jni::sys::jmethodID,
 }
+
+unsafe impl Send for AudioCallback {}
+unsafe impl Sync for AudioCallback {}
 
 impl Audio {
     pub fn new() -> Result<Self, String> {
