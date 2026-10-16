@@ -1,13 +1,13 @@
 use jni::JNIEnv;
 use jni::objects::JObject;
+use std::ptr::null_mut;
 use wgpu::{
     Backends, Instance, InstanceDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration,
     SurfaceTarget,
 };
 
 /// Wrapper around ANativeWindow pointer to make it Send + Sync.
-/// Raw pointers are always Send + Sync, but the compiler sometimes struggles
-/// with opaque FFI types. This wrapper explicitly asserts Send + Sync.
+/// Raw pointers are always Send + Sync regardless of the pointee type.
 struct AndroidWindow(*mut ndk_sys::ANativeWindow);
 
 unsafe impl Send for AndroidWindow {}

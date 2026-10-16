@@ -26,23 +26,24 @@ use veloren_common::comp::controller::{ControllerInputs, InputKind};
 use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
-/// The Veloren client instance, stored as an Arc in static storage.
-static CLIENT: OnceLock<Mutex<Option<Arc<Client>>>> = OnceLock::new();
+/// The Veloren client instance, stored as jlong (i64 = raw pointer) in static storage.
+/// jlong is i64 which is always Send + Sync.
+static CLIENT: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
-/// The wgpu renderer instance, stored as an Arc in static storage.
-static RENDERER: OnceLock<Mutex<Option<Arc<renderer::Renderer>>>> = OnceLock::new();
+/// The wgpu renderer instance, stored as jlong raw pointer.
+static RENDERER: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 
-/// The Android AAssetManager, stored as a raw pointer in static storage.
+/// The Android AAssetManager, stored as raw pointer.
 #[cfg(target_os = "android")]
-static ASSET_MANAGER: OnceLock<Mutex<Option<*mut ndk_sys::AAssetManager>>> = OnceLock::new();
+static ASSET_MANAGER: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 
-/// The Android asset cache, initialized once the AAssetManager is set.
+/// The Android asset cache.
 #[cfg(target_os = "android")]
 static ASSET_CACHE: OnceLock<Mutex<Option<assets_manager::AssetCache>>> = OnceLock::new();
 
-fn client_storage() -> &'static Mutex<Option<Arc<Client>>> {
+fn client_storage() -> &'static Mutex<Option<jlong>> {
     CLIENT.get_or_init(|| Mutex::new(None))
 }
 
@@ -54,12 +55,12 @@ fn last_tick_storage() -> &'static Mutex<Option<Instant>> {
     LAST_TICK.get_or_init(|| Mutex::new(None))
 }
 
-fn renderer_storage() -> &'static Mutex<Option<Arc<renderer::Renderer>>> {
+fn renderer_storage() -> &'static Mutex<Option<jlong>> {
     RENDERER.get_or_init(|| Mutex::new(None))
 }
 
 #[cfg(target_os = "android")]
-fn asset_manager_storage() -> &'static Mutex<Option<*mut ndk_sys::AAssetManager>> {
+fn asset_manager_storage() -> &'static Mutex<Option<jlong>> {
     ASSET_MANAGER.get_or_init(|| Mutex::new(None))
 }
 
@@ -70,12 +71,13 @@ fn asset_cache_storage() -> &'static Mutex<Option<assets_manager::AssetCache>> {
 
 /// Initialize the Veloren client and connect to a server.
 /// Called from Java: `velorenInit(serverAddress: String)`
+/// Returns: jlong (raw pointer to Box<Client> cast to jlong)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     mut env: JNIEnv,
     _class: JClass,
     server_address: JString,
-) -> jint {
+) -> jlong {
     let server_addr: String = env
         .get_string(server_address)
         .map(|s| s.to_string_lossy().into_owned())
@@ -85,7 +87,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         Ok(rt) => rt,
         Err(e) => {
             eprintln!("Failed to create tokio runtime: {}", e);
-            return -1;
+            return 0;
         }
     };
 
@@ -110,31 +112,35 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     });
 
     match client_result {
-        Ok(client) => {
-            client_storage().lock().unwrap().replace(Some(Arc::new(client)));
+        Ok(mut client) => {
+            let boxed = Box::new(client);
+            let ptr = Box::into_raw(boxed) as *mut Client as jlong;
+            client_storage().lock().unwrap().replace(Some(ptr));
             runtime_storage().lock().unwrap().replace(runtime);
             last_tick_storage().lock().unwrap().replace(Instant::now());
 
             println!("Veloren client initialized, connected to {}", server_addr);
-            0
+            ptr
         }
         Err(e) => {
             eprintln!("Failed to create Veloren client: {:?}", e);
-            -2
+            0
         }
     }
 }
 
 /// Run one tick of the Veloren client.
-/// Called from Java each frame: `velorenTick(dt: float)`
+/// Called from Java each frame: `velorenTick(clientPtr, dt)`
+/// Returns: jint (0 on success, -1 on error)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     mut env: JNIEnv,
     _class: JClass,
+    client_ptr: jlong,
     dt: jfloat,
 ) -> jint {
-    let client_guard = client_storage().lock().unwrap();
-    let Some(client) = client_guard.as_ref() else {
+    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
+    let Some(client_ptr) = client_ptr else {
         return -1;
     };
 
@@ -148,9 +154,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
 
     let inputs = ControllerInputs::default();
 
+    let client = unsafe { &mut *(client_ptr as *mut Client) };
     match client.tick(inputs, elapsed) {
         Ok(events) => {
-            // Forward events to Java callback if registered
             if !events.is_empty() {
                 events::forward_events(&mut env, &events);
             }
@@ -165,6 +171,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
 
 /// Create the wgpu renderer and bind it to the Android Surface.
 /// Called from Java: `velorenCreateRenderer(surface, width, height)`
+/// Returns: jlong (raw pointer to Box<Renderer> cast to jlong)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRenderer(
     mut env: JNIEnv,
@@ -177,26 +184,31 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
         Ok(r) => r,
         Err(e) => {
             eprintln!("Failed to create renderer: {}", e);
-            return -1;
+            return 0;
         }
     };
 
-    renderer_storage().lock().unwrap().replace(Some(Arc::new(renderer)));
-    0
+    let boxed = Box::new(renderer);
+    let ptr = Box::into_raw(boxed) as *mut renderer::Renderer as jlong;
+    renderer_storage().lock().unwrap().replace(Some(ptr));
+    ptr
 }
 
 /// Render one frame.
-/// Called from Java each frame: `velorenRenderFrame()`
+/// Called from Java each frame: `velorenRenderFrame(clientPtr)`
+/// Returns: jint (0 on success, -1 on error)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     _env: JNIEnv,
     _class: JClass,
+    client_ptr: jlong,
 ) -> jint {
     let renderer_guard = renderer_storage().lock().unwrap();
-    let Some(renderer) = renderer_guard.as_ref() else {
+    let Some(renderer_ptr) = renderer_guard.as_ref() else {
         return -1;
     };
 
+    let renderer = unsafe { &mut *(*renderer_ptr as *mut renderer::Renderer) };
     match renderer.render() {
         Ok(()) => 0,
         Err(e) => {
@@ -207,19 +219,21 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
 }
 
 /// Resize the renderer surface.
-/// Called from Java: `velorenResize(width, height)`
+/// Called from Java: `velorenResize(clientPtr, width, height)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
     _env: JNIEnv,
     _class: JClass,
+    client_ptr: jlong,
     width: jint,
     height: jint,
 ) {
     let mut renderer_guard = renderer_storage().lock().unwrap();
-    let Some(renderer) = renderer_guard.as_mut() else {
+    let Some(renderer_ptr) = renderer_guard.as_mut() else {
         return;
     };
 
+    let renderer = unsafe { &mut *(*renderer_ptr as *mut renderer::Renderer) };
     renderer.resize(width as u32, height as u32);
 }
 
@@ -232,7 +246,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
     _class: JClass,
     asset_manager: JObject,
 ) -> jint {
-    // Get the AAssetManager from the Java AssetManager object
     let mgr_ptr = unsafe {
         ndk_sys::AAssetManager_fromJava(
             env.get_raw_jnienv() as *mut _,
@@ -245,9 +258,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
         return -1;
     }
 
-    asset_manager_storage().lock().unwrap().replace(mgr_ptr);
+    asset_manager_storage().lock().unwrap().replace(mgr_ptr as jlong);
 
-    // Create the asset cache with the Android source
     let android_source = match android_assets::AndroidAssets::from_raw(mgr_ptr) {
         Ok(s) => s,
         Err(e) => {
@@ -277,7 +289,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset(
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    // Split path into id and extension
     let (id, ext) = match path_str.rfind('.') {
         Some(dot) => (&path_str[..dot], &path_str[dot + 1..]),
         None => (&path_str, ""),
@@ -306,16 +317,23 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset(
 }
 
 /// Shutdown the Veloren client and renderer.
+/// Called from Java: `velorenShutdown(clientPtr)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
     _env: JNIEnv,
     _class: JClass,
+    client_ptr: jlong,
 ) {
-    if let Some(renderer) = renderer_storage().lock().unwrap().take() {
-        drop(renderer);
+    if client_ptr != 0 {
+        unsafe {
+            drop(Box::from_raw(client_ptr as *mut Client));
+        }
     }
-    if let Some(client) = client_storage().lock().unwrap().take() {
-        drop(client);
+    client_storage().lock().unwrap().take();
+    if let Some(renderer_ptr) = renderer_storage().lock().unwrap().take() {
+        unsafe {
+            drop(Box::from_raw(renderer_ptr as *mut renderer::Renderer));
+        }
     }
     runtime_storage().lock().unwrap().take();
     last_tick_storage().lock().unwrap().take();
@@ -328,11 +346,12 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
 }
 
 /// Set controller inputs from Android touch/joystick.
-/// Called from Java: `velorenSetInput(moveX: float, moveY: float, moveZ: float, action: int, pressed: boolean)`
+/// Called from Java: `velorenSetInput(clientPtr, moveX, moveY, moveZ, action, pressed)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     _env: JNIEnv,
     _class: JClass,
+    client_ptr: jlong,
     move_x: jfloat,
     move_y: jfloat,
     move_z: jfloat,
@@ -340,7 +359,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     pressed: jboolean,
 ) {
     let mut client_guard = client_storage().lock().unwrap();
-    let Some(client) = client_guard.as_mut() else {
+    let Some(client_ptr) = client_guard.as_ref().copied() else {
         return;
     };
 
@@ -350,7 +369,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
         2 => InputKind::Block,
         3 => InputKind::Jump,
         4 => {
-            // Look input: store camera delta for renderer/client to consume
             let mut look = look_delta_storage().lock().unwrap();
             *look = Some(vek::Vec2::new(move_x, move_y));
             return;
@@ -358,6 +376,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
         _ => InputKind::Primary,
     };
 
+    let client = unsafe { &mut *(client_ptr as *mut Client) };
     client.handle_input(input_kind, pressed != 0, None, None);
 
     if let Some(controller) = client
@@ -372,25 +391,31 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
 }
 
 /// Get the current tick count (for debugging).
+/// Called from Java: `velorenGetTick(clientPtr)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
     _env: JNIEnv,
     _class: JClass,
+    client_ptr: jlong,
 ) -> jint {
     let client_guard = client_storage().lock().unwrap();
     match client_guard.as_ref() {
-        Some(client) => client.get_tick() as jint,
+        Some(client_ptr) => {
+            let client = unsafe { &mut *(*client_ptr as *mut Client) };
+            client.get_tick() as jint
+        }
         None => -1,
     }
 }
 
 /// Set mobile performance tier for Android optimizations.
-/// Called from Java: `velorenSetMobilePerfTier(tier: int)`
+/// Called from Java: `velorenSetMobilePerfTier(clientPtr, tier: int)`
 /// tier: 0=None, 1=Low, 2=Medium
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerfTier(
     _env: JNIEnv,
     _class: JClass,
+    client_ptr: jlong,
     tier: jint,
 ) {
     let mut client_guard = client_storage().lock().unwrap();
@@ -480,8 +505,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInitShaderCac
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    // Shader cache initialization would be wired to voxygen's renderer
-    // when it's ported to Android. For now, return success.
     println!("Shader cache initialization (placeholder)");
     0
 }
@@ -494,8 +517,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetThreadCoun
     _class: JClass,
     count: jint,
 ) {
-    // Rayon thread pool is typically set at startup. This stores the
-    // preference for use when the client initializes its thread pool.
     static THREAD_COUNT: OnceLock<Mutex<usize>> = OnceLock::new();
     *THREAD_COUNT.lock().unwrap() = count.max(1) as usize;
     println!("Rayon thread count set to {}", count);
@@ -594,7 +615,7 @@ impl CredentialProvider for StaticCredentialProvider {
     }
 }
 
-/// The look delta (camera rotation) from touch input, stored for the renderer/client.
+/// The look delta (camera rotation) from touch input.
 static LOOK_DELTA: OnceLock<Mutex<Option<vek::Vec2<f32>>>> = OnceLock::new();
 
 fn look_delta_storage() -> &'static Mutex<Option<vek::Vec2<f32>>> {
