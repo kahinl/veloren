@@ -5,6 +5,14 @@ use wgpu::{
     SurfaceTarget,
 };
 
+/// Wrapper around ANativeWindow pointer to make it Send + Sync.
+/// Raw pointers are always Send + Sync, but the compiler sometimes struggles
+/// with opaque FFI types. This wrapper explicitly asserts Send + Sync.
+struct AndroidWindow(*mut ndk_sys::ANativeWindow);
+
+unsafe impl Send for AndroidWindow {}
+unsafe impl Sync for AndroidWindow {}
+
 /// Holds the wgpu device, queue, and surface tied to an Android SurfaceView.
 pub struct Renderer {
     _instance: Instance,
@@ -14,7 +22,7 @@ pub struct Renderer {
     pub surface: Surface<'static>,
     pub config: SurfaceConfiguration,
     /// Keep the ANativeWindow alive for the lifetime of the surface.
-    _window: *mut ndk_sys::ANativeWindow,
+    _window: AndroidWindow,
 }
 
 impl Renderer {
@@ -64,7 +72,7 @@ impl Renderer {
             queue,
             surface,
             config,
-            _window: window,
+            _window: AndroidWindow(window),
         })
     }
 
@@ -121,9 +129,9 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        if !self._window.is_null() {
+        if !self._window.0.is_null() {
             unsafe {
-                ndk_sys::ANativeWindow_release(self._window);
+                ndk_sys::ANativeWindow_release(self._window.0);
             }
         }
     }
