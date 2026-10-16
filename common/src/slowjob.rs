@@ -273,7 +273,7 @@ impl InternalSlowJobPool {
             .collect::<HashMap<String, u64>>();
         let mut to_be_queued = queued.clone();
         let name = name.to_owned();
-        *to_be_queued.entry(&name).or_default() += 1;
+        *to_be_queued.entry(name.clone()).or_default() += 1;
         let limit = (self.global_limit - self.global_spawned_and_running) as usize;
         // calculate to_be_queued first
         let to_be_queued_order = self.calc_queued_order(to_be_queued, limit);
