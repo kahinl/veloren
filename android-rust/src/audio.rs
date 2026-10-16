@@ -56,7 +56,7 @@ fn audio_storage() -> &'static Mutex<Option<Box<Audio>>> {
 }
 
 /// JNI: `velorenAudioInit()`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioInit(
     _env: JNIEnv,
     _class: JClass,
@@ -78,7 +78,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioInit(
 }
 
 /// JNI: `velorenAudioPush(buffer: byteArray)`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioPush(
     _env: JNIEnv,
     _class: JClass,
@@ -88,7 +88,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioPush(
 }
 
 /// JNI: `velorenAudioShutdown()`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioShutdown(
     _env: JNIEnv,
     _class: JClass,
@@ -97,7 +97,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioShutdown
 }
 
 /// Silence the audio (enqueue silence buffers).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMute(
     _env: JNIEnv,
     _class: JClass,

@@ -13,7 +13,7 @@ fn event_callback_storage() -> &'static std::sync::Mutex<Option<jni::objects::Gl
 
 /// JNI: `velorenSetEventCallback(callbackObject)`
 /// Registers a Java object to receive events from the Rust client.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallback(
     mut env: JNIEnv,
     _class: JClass,
@@ -35,7 +35,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
 
 /// JNI: `velorenSendEvent(eventType: String, data: String)`
 /// Allows Java to send an event back to Rust (e.g., UI button press).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
     mut env: JNIEnv,
     _class: JClass,

@@ -101,7 +101,7 @@ fn audio_mixer_storage() -> &'static std::sync::Mutex<Option<AudioMixer>> {
 }
 
 /// JNI: `velorenAudioMixerInit(sampleRate: int)`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerInit(
     _env: JNIEnv,
     _class: JClass,
@@ -115,7 +115,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerIni
 }
 
 /// JNI: `velorenAudioMixerGenerate(numFrames: int)` → byteArray (PCM16 stereo)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGenerate<'a>(
     mut env: JNIEnv<'a>,
     _class: JClass,
@@ -134,7 +134,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
 }
 
 /// JNI: `velorenAudioMixerSetMasterVolume(volume: float)`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerSetMasterVolume(
     _env: JNIEnv,
     _class: JClass,
@@ -147,7 +147,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerSet
 }
 
 /// JNI: `velorenAudioMixerShutdown()`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerShutdown(
     _env: JNIEnv,
     _class: JClass,
