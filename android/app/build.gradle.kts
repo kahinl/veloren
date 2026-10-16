@@ -13,6 +13,10 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -33,10 +37,6 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-    }
-
-    ndk {
-        abiFilters.add("arm64-v8a")
     }
 
     compileOptions {
@@ -61,7 +61,7 @@ tasks.register("copyVelorenAssets") {
     val dstDir = file("src/main/assets")
 
     doFirst {
-        dstDir.deleteDir()
+        dstDir.deleteRecursively()
         dstDir.mkdirs()
     }
 
