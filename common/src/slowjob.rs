@@ -186,7 +186,7 @@ impl InternalSlowJobPool {
     /// returns order of configuration which are queued next
     fn calc_queued_order(
         &self,
-        mut queued: HashMap<&String, u64>,
+        mut queued: HashMap<String, u64>,
         mut limit: usize,
     ) -> Vec<String> {
         let mut roundrobin = self.last_spawned_configs.clone();
@@ -203,7 +203,7 @@ impl InternalSlowJobPool {
                 (
                     n,
                     queued
-                        .get(&n)
+                        .get(n.as_str())
                         .cloned()
                         .unwrap_or(0)
                         .min(c.local_limit - c.local_spawned_and_running),
@@ -212,7 +212,7 @@ impl InternalSlowJobPool {
             .collect::<HashMap<_, _>>();
         // grab all configs that are queued and not running. in roundrobin order
         for n in roundrobin.clone().into_iter() {
-            if let Some(c) = queued.get_mut(&n)
+            if let Some(c) = queued.get_mut(n.as_str())
                 && *c > 0
                 && spawned.get(&n).cloned().unwrap_or(0) == 0
             {
@@ -269,8 +269,8 @@ impl InternalSlowJobPool {
         let queued = self
             .queue
             .iter()
-            .map(|(n, m)| (n, m.len() as u64))
-            .collect::<HashMap<_, u64>>();
+            .map(|(n, m)| (n.clone(), m.len() as u64))
+            .collect::<HashMap<String, u64>>();
         let mut to_be_queued = queued.clone();
         let name = name.to_owned();
         *to_be_queued.entry(&name).or_default() += 1;
@@ -328,8 +328,8 @@ impl InternalSlowJobPool {
         let queued = self
             .queue
             .iter()
-            .map(|(n, m)| (n, m.len() as u64))
-            .collect::<HashMap<_, u64>>();
+            .map(|(n, m)| (n.clone(), m.len() as u64))
+            .collect::<HashMap<String, u64>>();
         let limit = self.global_limit as usize;
         let queued_order = self.calc_queued_order(queued, limit);
         for name in queued_order.into_iter() {
@@ -483,7 +483,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 4);
         assert_eq!(result.len(), 1);
@@ -500,7 +500,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 4);
         assert_eq!(result.len(), 2);
@@ -518,7 +518,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 4);
         assert_eq!(result.len(), 4);
@@ -538,7 +538,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 4);
         assert_eq!(result.len(), 2);
@@ -556,7 +556,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 4);
         assert_eq!(result.len(), 4);
@@ -574,7 +574,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 4);
         assert_eq!(result.len(), 4);
@@ -592,7 +592,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 5);
         assert_eq!(result.len(), 5);
@@ -610,7 +610,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         let result = internal.calc_queued_order(queued, 11);
         assert_eq!(result.len(), 10);
@@ -627,7 +627,7 @@ mod tests {
             .collect::<Vec<_>>();
         let queued = queue_data
             .iter()
-            .map(|(s, c)| (s, *c))
+            .map(|(s, c)| (s.clone(), *c))
             .collect::<HashMap<_, _>>();
         // Spawn a FOO task.
         pool.internal
