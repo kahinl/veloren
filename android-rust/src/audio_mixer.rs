@@ -16,7 +16,7 @@ pub struct AudioMixer {
 }
 
 /// A single audio source that generates samples on demand.
-trait AudioSource {
+trait AudioSource: Send {
     /// Fill `buffer` (interleaved stereo f32 samples, frames = len/2) with mixed audio.
     fn generate(&mut self, sample_rate: u32, buffer: &mut [f32]);
 }
@@ -137,14 +137,14 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerIni
 
 /// JNI: `velorenAudioMixerGenerate(numFrames: int)` → byteArray (PCM16 stereo)
 #[no_mangle]
-pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGenerate(
-    mut env: JNIEnv,
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGenerate<'a>(
+    mut env: JNIEnv<'a>,
     _class: JClass,
     num_frames: jint,
-) -> JByteArray<'_> {
+) -> JByteArray<'a> {
     let mixer = audio_mixer_storage().lock().unwrap().as_mut();
     let Some(mixer) = mixer else {
-        return env.byte_array_from_slice(&[]).unwrap_or_else(|_| JByteArray::null());
+        return env.byte_array_from_slice(&[]).unwrap_or_else(|_| JByteArray::from_raw(std::ptr::null_mut()));
     };
 
     let pcm16 = mixer.generate_pcm16_stereo(num_frames as usize);
@@ -153,7 +153,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
         .flat_map(|s| s.to_le_bytes())
         .collect();
 
-    env.byte_array_from_slice(&bytes).unwrap_or_else(|_| JByteArray::null())
+    env.byte_array_from_slice(&bytes).unwrap_or_else(|_| JByteArray::from_raw(std::ptr::null_mut()))
 }
 
 /// JNI: `velorenAudioMixerSetMasterVolume(volume: float)`

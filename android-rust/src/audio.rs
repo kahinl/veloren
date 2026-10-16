@@ -10,6 +10,9 @@ pub struct Audio {
     _placeholder: Mutex<()>,
 }
 
+unsafe impl Send for Audio {}
+unsafe impl Sync for Audio {}
+
 impl Audio {
     pub fn new() -> Result<Self, String> {
         Err("OpenSL ES audio not available in ndk-sys 0.6".to_string())
@@ -27,6 +30,9 @@ impl Audio {
 }
 
 struct AudioCallback;
+
+unsafe impl Send for AudioCallback {}
+unsafe impl Sync for AudioCallback {}
 
 impl AudioCallback {
     pub fn new(_object: jni::objects::JObject, _method_id: jni::sys::jmethodID) -> Self {

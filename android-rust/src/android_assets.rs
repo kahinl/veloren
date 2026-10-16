@@ -1,12 +1,11 @@
-use std::borrow::Cow;
 use std::ffi::CString;
 use std::io;
 use std::path::PathBuf;
 use std::ptr::NonNull;
 
 use assets_manager::{
-    source::{DirEntry, FileContent, Source},
-    BoxedError,
+    source::{DirEntry, Source},
+    BoxedError, FileContent,
 };
 
 /// Android asset source that reads from the APK's `src/main/assets/` directory
@@ -75,7 +74,7 @@ impl AndroidAssets {
 impl Source for AndroidAssets {
     fn read(&self, id: &str, ext: &str) -> io::Result<FileContent<'_>> {
         let bytes = self.read_asset_bytes(id, ext)?;
-        Ok(Cow::Owned(bytes))
+        Ok(FileContent::Owned(bytes))
     }
 
     fn read_dir(&self, id: &str, f: &mut dyn FnMut(DirEntry)) -> io::Result<()> {

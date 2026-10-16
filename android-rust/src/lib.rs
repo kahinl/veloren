@@ -252,12 +252,13 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
     _class: JClass,
     asset_manager: JObject,
 ) -> jint {
-    let mgr_ptr = unsafe {
-        ndk_sys::AAssetManager_fromJava(
-            env.get_raw() as *mut _,
-            asset_manager.into_raw() as *mut _,
-        )
-    };
+    // Stub: ndk-sys 0.6 does not export AAssetManager_fromJava.
+    // Real implementation needs JNI call to get ANativeWindow/AAssetManager.
+    let mgr_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+    let _ = env;
+    let _ = asset_manager;
+
+    if mgr_ptr.is_null() {
 
     if mgr_ptr.is_null() {
         eprintln!("Failed to get AAssetManager from Java AssetManager");
@@ -285,11 +286,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
 /// Called from Java: `velorenLoadAsset(path: String)`
 #[cfg(target_os = "android")]
 #[no_mangle]
-pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset(
-    mut env: JNIEnv,
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>(
+    mut env: JNIEnv<'a>,
     _class: JClass,
     path: JString,
-) -> JObject<'_> {
+) -> JObject<'a> {
     let path_str: String = env
         .get_string(path)
         .map(|s| s.to_string_lossy().into_owned())
@@ -406,8 +407,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
 ) -> jint {
     let client_guard = client_storage().lock().unwrap();
     match client_guard.as_ref() {
-        Some(client_ptr) => {
-            let client = unsafe { &mut *(*client_ptr as *mut Client) };
+        Some(ptr) => {
+            let client = unsafe { &mut *(*ptr as *mut Client) };
             client.get_tick() as jint
         }
         None => -1,
@@ -425,9 +426,10 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
     tier: jint,
 ) {
     let mut client_guard = client_storage().lock().unwrap();
-    let Some(client) = client_guard.as_mut() else {
+    let Some(ptr) = client_guard.as_mut() else {
         return;
     };
+    let client = unsafe { &mut *(*ptr as *mut Client) };
 
     let perf_tier = match tier {
         1 => veloren_client::MobilePerfTier::Low,

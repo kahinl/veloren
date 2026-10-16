@@ -15,6 +15,9 @@ struct EventCallback {
     method_id: jni::sys::jmethodID,
 }
 
+unsafe impl Send for EventCallback {}
+unsafe impl Sync for EventCallback {}
+
 impl EventCallback {
     pub fn new(object: JObject, method_id: jni::sys::jmethodID) -> Self {
         Self { object, method_id }
@@ -26,7 +29,7 @@ impl EventCallback {
         let j_data = env.new_string(data)?;
 
         env.call_method(
-            self.object,
+            self.object.as_obj(),
             self.method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
             &[j_type.into(), j_data.into()],
@@ -80,7 +83,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
         }
     };
 
-    let callback = EventCallback::new(global_obj, method_id);
+    let callback_obj: JObject = global_obj.into();
+    let callback = EventCallback::new(callback_obj, method_id);
     event_callback_storage().lock().unwrap().replace(callback);
 
     println!("Event callback registered");
@@ -144,7 +148,7 @@ pub fn forward_events(env: &mut JNIEnv, events: &[veloren_client::Event]) {
 
     for event in events {
         let (etype, data) = match event {
-            veloren_client::Event::Chat(msg) => ("chat", format!("{msg}")),
+            veloren_client::Event::Chat(msg) => ("chat", format!("{msg:?}")),
             veloren_client::Event::Disconnect => ("disconnect", "".to_string()),
             veloren_client::Event::DisconnectionNotification(code) => {
                 ("disconnect_notification", code.to_string())
@@ -159,8 +163,8 @@ pub fn forward_events(env: &mut JNIEnv, events: &[veloren_client::Event]) {
                 ("set_view_distance", distance.to_string())
             }
             veloren_client::Event::Outcome(outcome) => ("outcome", format!("{outcome:?}")),
-            veloren_client::Event::CharacterCreated(id) => ("character_created", id.to_string()),
-            veloren_client::Event::CharacterEdited(id) => ("character_edited", id.to_string()),
+            veloren_client::Event::CharacterCreated(id) => ("character_created", format!("{id:?}")),
+            veloren_client::Event::CharacterEdited(id) => ("character_edited", format!("{id:?}")),
             veloren_client::Event::CharacterError(err) => ("character_error", err.clone()),
             veloren_client::Event::StartSpectate(pos) => {
                 ("start_spectate", format!("{pos:?}"))
