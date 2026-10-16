@@ -25,10 +25,11 @@ use veloren_client::addr::ConnectionArgs;
 use veloren_common::comp::controller::{ControllerInputs, InputKind};
 use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
+use std::sync::Arc;
 
 /// The Veloren client instance, stored as jlong (i64 raw pointer) in static storage.
 static CLIENT: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
-static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
+static RUNTIME: OnceLock<Mutex<Option<Arc<Runtime>>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 /// The wgpu renderer instance, stored as jlong raw pointer.
@@ -46,7 +47,7 @@ fn client_storage() -> &'static Mutex<Option<jlong>> {
     CLIENT.get_or_init(|| Mutex::new(None))
 }
 
-fn runtime_storage() -> &'static Mutex<Option<Runtime>> {
+fn runtime_storage() -> &'static Mutex<Option<Arc<Runtime>>> {
     RUNTIME.get_or_init(|| Mutex::new(None))
 }
 
@@ -88,12 +89,14 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         }
     };
 
-    let client_result = runtime.block_on(async {
+    let rt = Arc::new(runtime);
+    runtime_storage().lock().unwrap().replace(Arc::clone(&rt));
+
+    let client_result = rt.block_on(async {
         let addr = ConnectionArgs::Tcp {
             hostname: server_addr.clone(),
             prefer_ipv6: false,
         };
-        let rt = Arc::new(runtime);
         let provider = StaticCredentialProvider;
         Client::new(
             addr,
@@ -113,7 +116,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             let boxed = Box::new(client);
             let ptr = Box::into_raw(boxed) as *mut Client as jlong;
             *client_storage().lock().unwrap() = Some(ptr);
-            *runtime_storage().lock().unwrap() = Some(runtime);
             *last_tick_storage().lock().unwrap() = Some(Instant::now());
 
             println!("Veloren client initialized, connected to {}", server_addr);
@@ -276,8 +278,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
         .unwrap_or_else(|_| String::new());
 
     let (id, ext) = match path_str.rfind('.') {
-        Some(dot) => (&path_str[..dot], &path_str[dot + 1..]),
-        None => (&path_str, ""),
+        Some(dot) => (path_str[..dot], path_str[dot + 1..]),
+        None => (path_str.as_str(), ""),
     };
 
     let cache = asset_cache_storage()
@@ -294,7 +296,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
     };
 
     match cache.load_owned::<Box<str>>(format!("{id}.{ext}").as_str()) {
-        Ok(bytes) => match env.byte_array_from_slice(&bytes) {
+        Ok(bytes) => match env.byte_array_from_slice(bytes.as_bytes()) {
             Ok(arr) => arr.into(),
             Err(_) => JObject::null(),
         },
