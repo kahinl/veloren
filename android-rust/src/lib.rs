@@ -98,15 +98,13 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             prefer_ipv6: false,
         };
         let provider = StaticCredentialProvider;
-        let stage_cb: Box<dyn Fn(ClientInitStage) + Send + Sync> = Box::new(|_stage: ClientInitStage| {});
-        let builder_cb: Box<dyn Fn(&mut DispatcherBuilder) + Send + Sync> = Box::new(|_builder: &mut DispatcherBuilder| {});
         Client::new(
             addr,
             std::sync::Arc::clone(&rt),
             None,
             &provider,
-            &*stage_cb,
-            &*builder_cb,
+            &stage_callback,
+            &builder_callback,
             PathBuf::from("/data/data/com.veloren.client/files"),
             ClientType::Game,
         )
@@ -129,6 +127,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         }
     }
 }
+
+fn stage_callback(_stage: ClientInitStage) {}
+fn builder_callback(_builder: &mut DispatcherBuilder) {}
 
 /// Run one tick of the Veloren client.
 /// Called from Java each frame: `velorenTick(clientPtr, dt)`
