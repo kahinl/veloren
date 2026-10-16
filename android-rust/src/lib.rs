@@ -259,9 +259,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
     let _ = asset_manager;
 
     if mgr_ptr.is_null() {
-
-    if mgr_ptr.is_null() {
-        eprintln!("Failed to get AAssetManager from Java AssetManager");
+        eprintln!("Failed to get AAssetManager from Java AssetManager (stub)");
         return -1;
     }
 
