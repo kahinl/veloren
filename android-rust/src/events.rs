@@ -29,7 +29,7 @@ impl EventCallback {
         let j_data = env.new_string(data)?;
 
         env.call_method(
-            &self.object,
+            self.object.as_obj(),
             self.method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
             &[(&j_type).into(), (&j_data).into()],
