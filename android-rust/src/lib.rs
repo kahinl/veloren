@@ -98,13 +98,15 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             prefer_ipv6: false,
         };
         let provider = StaticCredentialProvider;
+        let stage_cb: Box<dyn Fn(ClientInitStage) + Send + Sync> = Box::new(|_stage: ClientInitStage| {});
+        let builder_cb: Box<dyn Fn(&mut DispatcherBuilder) + Send + Sync> = Box::new(|_builder: &mut DispatcherBuilder| {});
         Client::new(
             addr,
             std::sync::Arc::clone(&rt),
             None,
             &provider,
-            |_stage: ClientInitStage| {},
-            |_builder: &mut DispatcherBuilder| {},
+            &*stage_cb,
+            &*builder_cb,
             PathBuf::from("/data/data/com.veloren.client/files"),
             ClientType::Game,
         )
