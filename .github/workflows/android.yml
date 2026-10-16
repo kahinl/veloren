@@ -46,10 +46,13 @@ jobs:
       - name: Find NDK clang
         run: |
           CLANG_PATH=$(find / -name 'aarch64-linux-android34-clang' -type f 2>/dev/null | head -1)
+          CLANGXX_PATH=$(find / -name 'aarch64-linux-android34-clang++' -type f 2>/dev/null | head -1)
           AR_PATH=$(find / -name 'llvm-ar' -type f 2>/dev/null | head -1)
           echo "CLANG_PATH=$CLANG_PATH" >> $GITHUB_ENV
+          echo "CLANGXX_PATH=$CLANGXX_PATH" >> $GITHUB_ENV
           echo "AR_PATH=$AR_PATH" >> $GITHUB_ENV
           echo "Found clang at: $CLANG_PATH"
+          echo "Found clang++ at: $CLANGXX_PATH"
           echo "Found ar at: $AR_PATH"
 
       - name: Install Java
@@ -71,6 +74,7 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.CLANG_PATH }}
           CC_aarch64_linux_android: ${{ env.CLANG_PATH }}
+          CXX_aarch64_linux_android: ${{ env.CLANGXX_PATH }}
           AR_aarch64_linux_android: ${{ env.AR_PATH }}
 
       - name: Copy native lib to Android project
