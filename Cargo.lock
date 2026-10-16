@@ -9096,7 +9096,7 @@ dependencies = [
 name = "veloren-android"
 version = "0.1.0"
 dependencies = [
- "futures-util",
+ "assets_manager",
  "jni 0.21.1",
  "ndk 0.6.0",
  "ndk-sys 0.6.0+11769913",
