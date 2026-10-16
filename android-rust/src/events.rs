@@ -1,46 +1,13 @@
 use jni::JNIEnv;
-use jni::objects::{JClass, JObject, JMethodID, JString};
-use jni::sys::_jmethodID;
+use jni::objects::{JClass, JObject, JString};
 use std::sync::{Mutex, OnceLock};
 
 use veloren_client::Client;
 
-/// Stores the Java callback object and method ID for sending events from Rust to Java.
-static EVENT_CALLBACK: OnceLock<std::sync::Mutex<Option<EventCallback>>> = OnceLock::new();
+/// Stores the Java callback object for sending events from Rust to Java.
+static EVENT_CALLBACK: OnceLock<std::sync::Mutex<Option<jni::objects::GlobalRef>>> = OnceLock::new();
 
-struct EventCallback {
-    /// Global reference to the Java object implementing the callback interface.
-    object: jni::objects::GlobalRef,
-    /// Method ID of `onEvent(type: String, data: String)` on that object (raw pointer).
-    method_id: *mut _jmethodID,
-}
-
-unsafe impl Send for EventCallback {}
-unsafe impl Sync for EventCallback {}
-
-impl EventCallback {
-    pub fn new(object: jni::objects::GlobalRef, method_id: *mut _jmethodID) -> Self {
-        Self { object, method_id }
-    }
-
-    /// Send an event to Java. Must be called from a thread with a valid JNIEnv.
-    pub fn send(&self, env: &mut JNIEnv, event_type: &str, data: &str) -> Result<(), jni::errors::Error> {
-        let j_type = env.new_string(event_type)?;
-        let j_data = env.new_string(data)?;
-        let method_id = unsafe { JMethodID::from_raw(self.method_id) };
-
-        env.call_method(
-            self.object.as_obj(),
-            "(Ljava/lang/String;Ljava/lang/String;)V",
-            method_id,
-            &[&j_type.into(), &j_data.into()],
-        )?;
-
-        Ok(())
-    }
-}
-
-fn event_callback_storage() -> &'static std::sync::Mutex<Option<EventCallback>> {
+fn event_callback_storage() -> &'static std::sync::Mutex<Option<jni::objects::GlobalRef>> {
     EVENT_CALLBACK.get_or_init(|| std::sync::Mutex::new(None))
 }
 
@@ -52,26 +19,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
     _class: JClass,
     callback_object: JObject,
 ) -> i32 {
-    let callback_class = match env.get_object_class(&callback_object) {
-        Ok(cls) => cls,
-        Err(e) => {
-            eprintln!("Failed to get callback object class: {:?}", e);
-            return -1;
-        }
-    };
-
-    let method_id = match env.get_method_id(
-        &callback_class,
-        "onEvent",
-        "(Ljava/lang/String;Ljava/lang/String;)V",
-    ) {
-        Ok(mid) => mid.into_raw(),
-        Err(e) => {
-            eprintln!("Failed to get onEvent method ID: {:?}", e);
-            return -2;
-        }
-    };
-
     let global_obj = match env.new_global_ref(callback_object) {
         Ok(ref_obj) => ref_obj,
         Err(e) => {
@@ -80,8 +27,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
         }
     };
 
-    let callback = EventCallback::new(global_obj, method_id);
-    event_callback_storage().lock().unwrap().replace(callback);
+    event_callback_storage().lock().unwrap().replace(global_obj);
 
     println!("Event callback registered");
     0
@@ -133,9 +79,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
 /// Call this from `velorenTick` after getting events.
 pub fn forward_events(env: &mut JNIEnv, events: &[veloren_client::Event]) {
     let binding = event_callback_storage().lock().unwrap();
-    let callback = binding.as_ref();
+    let global_ref = binding.as_ref();
 
-    let Some(callback) = callback else {
+    let Some(global_ref) = global_ref else {
         return;
     };
 
@@ -183,6 +129,20 @@ pub fn forward_events(env: &mut JNIEnv, events: &[veloren_client::Event]) {
             }
         };
 
-        let _ = callback.send(env, etype, &data);
+        let j_type = env.new_string(etype).unwrap();
+        let j_data = env.new_string(&data).unwrap();
+
+        // Look up the method ID each time (simpler than storing it with lifetime issues)
+        let class = env.get_object_class(global_ref).unwrap();
+        let method_id = env
+            .get_method_id(&class, "onEvent", "(Ljava/lang/String;Ljava/lang/String;)V")
+            .unwrap();
+
+        let _ = env.call_method(
+            global_ref.as_obj(),
+            method_id,
+            "(Ljava/lang/String;Ljava/lang/String;)V",
+            &[j_type.into(), j_data.into()],
+        );
     }
 }

@@ -27,7 +27,7 @@ use tokio::runtime::Runtime;
 
 /// The Veloren client instance, stored as i64 (i64 raw pointer) in static storage.
 static CLIENT: OnceLock<Mutex<Option<i64>>> = OnceLock::new();
-static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
+static RUNTIME: OnceLock<Mutex<Option<Arc<Runtime>>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 /// The wgpu renderer instance, stored as i64 raw pointer.
@@ -45,7 +45,7 @@ fn client_storage() -> &'static Mutex<Option<i64>> {
     CLIENT.get_or_init(|| Mutex::new(None))
 }
 
-fn runtime_storage() -> &'static Mutex<Option<Runtime>> {
+fn runtime_storage() -> &'static Mutex<Option<Arc<Runtime>>> {
     RUNTIME.get_or_init(|| Mutex::new(None))
 }
 
