@@ -8,8 +8,6 @@ use assets_manager::{
     BoxedError,
 };
 
-/// Android asset source that reads from the APK's `src/main/assets/` directory
-/// via the NDK `AAssetManager` API.
 pub struct AndroidAssets {
     manager: NonNull<ndk_sys::AAssetManager>,
 }
@@ -24,7 +22,6 @@ impl AndroidAssets {
         Ok(Self { manager })
     }
 
-    /// Open an asset file and read all its bytes into a Vec.
     fn read_asset_bytes(&self, id: &str, ext: &str) -> io::Result<Vec<u8>> {
         let filename = format!("{}.{}", id, ext);
         let c_filename = match CString::new(filename.clone()) {
@@ -41,7 +38,7 @@ impl AndroidAssets {
             ndk_sys::AAssetManager_open(
                 self.manager.as_ptr(),
                 c_filename.as_ptr(),
-                ndk_sys::AASSET_MODE_UNKNOWN,
+                ndk_sys::AASSET_MODE_UNKNOWN as i32,
             )
         };
 
@@ -74,7 +71,7 @@ impl AndroidAssets {
 impl Source for AndroidAssets {
     fn read(&self, id: &str, ext: &str) -> io::Result<FileContent<'_>> {
         let bytes = self.read_asset_bytes(id, ext)?;
-        Ok(FileContent::Owned(bytes))
+        Ok(FileContent::Owned(Box::new(bytes) as Box<dyn AsRef<[u8]>>))
     }
 
     fn read_dir(&self, id: &str, f: &mut dyn FnMut(DirEntry)) -> io::Result<()> {
@@ -111,9 +108,9 @@ impl Source for AndroidAssets {
 
             let path = format!("{}/{}", id, name);
             let dot_pos = name.rfind('.');
-            let ext = dot_pos.map(|p| name[p + 1..].to_string()).unwrap_or_default();
+            let ext = dot_pos.map(|p| &name[p + 1..]).unwrap_or("");
 
-            f(DirEntry::File(path.into(), ext.into()));
+            f(DirEntry::File(&path, ext));
         }
 
         unsafe { ndk_sys::AAssetDir_close(dir_ptr) };
@@ -133,7 +130,7 @@ impl Source for AndroidAssets {
                     ndk_sys::AAssetManager_open(
                         self.manager.as_ptr(),
                         c_filename.as_ptr(),
-                        ndk_sys::AASSET_MODE_UNKNOWN,
+                        ndk_sys::AASSET_MODE_UNKNOWN as i32,
                     )
                 };
                 if !ptr.is_null() {
@@ -162,7 +159,6 @@ impl Source for AndroidAssets {
     }
 
     fn configure_hot_reloading(&self, _events: assets_manager::hot_reloading::EventSender) -> Result<(), BoxedError> {
-        // Hot reloading is not supported on Android assets (read-only APK).
         Ok(())
     }
 }

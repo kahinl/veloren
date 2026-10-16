@@ -1,7 +1,6 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JObject, JString};
 use jni::sys::{jboolean, jfloat, jint, jlong};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -27,7 +26,6 @@ use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
 /// The Veloren client instance, stored as jlong (i64 raw pointer) in static storage.
-/// jlong is i64 which is always Send + Sync.
 static CLIENT: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
@@ -64,20 +62,12 @@ fn asset_manager_storage() -> &'static Mutex<Option<jlong>> {
     ASSET_MANAGER.get_or_init(|| Mutex::new(None))
 }
 
-/// Wrapper to make `*mut ndk_sys::AAssetManager` Send + Sync for static storage.
-struct AssetManagerPtr(*mut ndk_sys::AAssetManager);
-
-unsafe impl Send for AssetManagerPtr {}
-unsafe impl Sync for AssetManagerPtr {}
-
 #[cfg(target_os = "android")]
 fn asset_cache_storage() -> &'static Mutex<Option<assets_manager::AssetCache>> {
     ASSET_CACHE.get_or_init(|| Mutex::new(None))
 }
 
 /// Initialize the Veloren client and connect to a server.
-/// Called from Java: `velorenInit(serverAddress: String)`
-/// Returns: jlong (raw pointer to Box<Client> cast to jlong)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     mut env: JNIEnv,
@@ -85,7 +75,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     server_address: JString,
 ) -> jlong {
     let server_addr: String = env
-        .get_string(server_address)
+        .get_string(&server_address)
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "veloren.club:3300".to_string());
 
@@ -136,8 +126,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
 }
 
 /// Run one tick of the Veloren client.
-/// Called from Java each frame: `velorenTick(clientPtr, dt)`
-/// Returns: jint (0 on success, -1 on error)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     mut env: JNIEnv,
@@ -176,8 +164,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
 }
 
 /// Create the wgpu renderer and bind it to the Android Surface.
-/// Called from Java: `velorenCreateRenderer(surface, width, height)`
-/// Returns: jlong (raw pointer to Box<Renderer> cast to jlong)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRenderer(
     mut env: JNIEnv,
@@ -201,8 +187,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
 }
 
 /// Render one frame.
-/// Called from Java each frame: `velorenRenderFrame(clientPtr)`
-/// Returns: jint (0 on success, -1 on error)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     _env: JNIEnv,
@@ -225,7 +209,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
 }
 
 /// Resize the renderer surface.
-/// Called from Java: `velorenResize(clientPtr, width, height)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
     _env: JNIEnv,
@@ -244,7 +227,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
 }
 
 /// Set the Android AAssetManager for loading assets from the APK.
-/// Called from Java: `velorenSetAssetManager(assetManager)`
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManager(
@@ -253,7 +235,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
     asset_manager: JObject,
 ) -> jint {
     // Stub: ndk-sys 0.6 does not export AAssetManager_fromJava.
-    // Real implementation needs JNI call to get ANativeWindow/AAssetManager.
     let mgr_ptr: *mut ndk_sys::AAssetManager = std::ptr::null_mut();
     let _ = env;
     let _ = asset_manager;
@@ -281,7 +262,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
 }
 
 /// Load an asset from the APK and return its bytes as a jbyteArray.
-/// Called from Java: `velorenLoadAsset(path: String)`
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>(
@@ -290,7 +270,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
     path: JString,
 ) -> JObject<'a> {
     let path_str: String = env
-        .get_string(path)
+        .get_string(&path)
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|_| String::new());
 
@@ -322,7 +302,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
 }
 
 /// Shutdown the Veloren client and renderer.
-/// Called from Java: `velorenShutdown(clientPtr)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
     _env: JNIEnv,
@@ -351,12 +330,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
 }
 
 /// Set controller inputs from Android touch/joystick.
-/// Called from Java: `velorenSetInput(clientPtr, moveX, moveY, moveZ, action, pressed)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     _env: JNIEnv,
     _class: JClass,
-    client_ptr: jlong,
+    _client_ptr: jlong,
     move_x: jfloat,
     move_y: jfloat,
     move_z: jfloat,
@@ -382,13 +360,14 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     };
 
     let client = unsafe { &mut *(client_ptr as *mut Client) };
+    let entity = client.entity();
     client.handle_input(input_kind, pressed != 0, None, None);
 
     if let Some(controller) = client
         .state_mut()
         .ecs_mut()
         .write_storage::<Controller>()
-        .get_mut(client.entity())
+        .get_mut(entity)
     {
         controller.inputs.move_dir = vek::Vec2::new(move_x, move_y);
         controller.inputs.move_z = move_z;
@@ -396,12 +375,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
 }
 
 /// Get the current tick count (for debugging).
-/// Called from Java: `velorenGetTick(clientPtr)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
     _env: JNIEnv,
     _class: JClass,
-    client_ptr: jlong,
+    _client_ptr: jlong,
 ) -> jint {
     let client_guard = client_storage().lock().unwrap();
     match client_guard.as_ref() {
@@ -414,13 +392,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
 }
 
 /// Set mobile performance tier for Android optimizations.
-/// Called from Java: `velorenSetMobilePerfTier(clientPtr, tier: int)`
-/// tier: 0=None, 1=Low, 2=Medium
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerfTier(
     _env: JNIEnv,
     _class: JClass,
-    client_ptr: jlong,
+    _client_ptr: jlong,
     tier: jint,
 ) {
     let mut client_guard = client_storage().lock().unwrap();
@@ -439,7 +415,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
 }
 
 /// Set weather enabled (rain/snow).
-/// Called from Java: `velorenSetWeatherEnabled(enabled: boolean)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetWeatherEnabled(
     _env: JNIEnv,
@@ -461,7 +436,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetWeatherEna
 }
 
 /// Set clouds enabled.
-/// Called from Java: `velorenSetCloudsEnabled(enabled: boolean)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCloudsEnabled(
     _env: JNIEnv,
@@ -483,7 +457,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetCloudsEnab
 }
 
 /// Set particles enabled.
-/// Called from Java: `velorenSetParticlesEnabled(enabled: boolean)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetParticlesEnabled(
     _env: JNIEnv,
@@ -505,7 +478,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetParticlesE
 }
 
 /// Initialize shader cache on first launch to avoid stuttering.
-/// Called from Java: `velorenInitShaderCache()`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInitShaderCache(
     _env: JNIEnv,
@@ -516,7 +488,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInitShaderCac
 }
 
 /// Set Rayon thread count for big.LITTLE CPU architecture.
-/// Called from Java: `velorenSetThreadCount(count: int)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetThreadCount(
     _env: JNIEnv,
@@ -539,7 +510,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetThreadCoun
 }
 
 /// Enable/disable on-demand asset loading.
-/// Called from Java: `velorenSetOnDemandAssets(enabled: boolean)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetOnDemandAssets(
     _env: JNIEnv,
@@ -561,8 +531,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetOnDemandAs
 }
 
 /// Set texture compression format for mobile (ASTC preferred).
-/// Called from Java: `velorenSetTextureCompression(format: int)`
-/// format: 0=Default, 1=ASTC, 2=ETC2
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetTextureCompression(
     _env: JNIEnv,
@@ -584,7 +552,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTextureCom
 }
 
 /// Set maximum FPS limit for battery/heat saving.
-/// Called from Java: `velorenSetMaxFps(fps: int)`
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMaxFps(
     _env: JNIEnv,
