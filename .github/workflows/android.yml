@@ -39,9 +39,15 @@ jobs:
         run: gradle wrapper
 
       - name: Install Android NDK
-        uses: actions/setup-android@v4
+        uses: nttld/setup-ndk@v1
         with:
-          ndk: r27c
+          ndk-version: r27c
+
+      - name: Find NDK clang
+        run: |
+          CLANG_PATH=$(find / -name 'aarch64-linux-android34-clang' -type f 2>/dev/null | head -1)
+          echo "CLANG_PATH=$CLANG_PATH" >> $GITHUB_ENV
+          echo "Found clang at: $CLANG_PATH"
 
       - name: Install Java
         uses: actions/setup-java@v4
@@ -60,10 +66,8 @@ jobs:
       - name: Build Rust library for Android (aarch64)
         run: cargo build --release --package veloren-android --target aarch64-linux-android
         env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang
-          CC: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang
-          CC_aarch64_linux_android: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.CLANG_PATH }}
+          CC_aarch64_linux_android: ${{ env.CLANG_PATH }}
 
       - name: Copy native lib to Android project
         run: |
