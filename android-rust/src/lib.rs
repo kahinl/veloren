@@ -103,8 +103,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             std::sync::Arc::clone(&rt),
             None,
             &provider,
-            &|_stage: _| {},
-            &|_builder: _| {},
+            |_stage| {},
+            |_builder| {},
             PathBuf::from("/data/data/com.veloren.client/files"),
             ClientType::Game,
         )
