@@ -1,11 +1,11 @@
-use std::ptr::NonNull;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::ptr::null_mut;
+use std::sync::{Mutex, OnceLock};
 
 /// Placeholder bridge to voxygen's wgpu renderer.
 ///
 /// When voxygen is ported to Android (winit removed, ANativeWindow surface used directly),
 /// this module will instantiate voxygen::Renderer and forward render calls.
-static VOXEGON_RENDERER: OnceLock<Mutex<Option<NonNull<VoxygenRendererState>>>> = OnceLock::new();
+static VOXEGON_RENDERER: OnceLock<Mutex<Option<*mut VoxygenRendererState>>> = OnceLock::new();
 
 struct VoxygenRendererState {
     width: u32,
@@ -13,7 +13,7 @@ struct VoxygenRendererState {
     initialized: bool,
 }
 
-fn voxygen_renderer_storage() -> &'static Mutex<Option<NonNull<VoxygenRendererState>>> {
+fn voxygen_renderer_storage() -> &'static Mutex<Option<*mut VoxygenRendererState>> {
     VOXEGON_RENDERER.get_or_init(|| Mutex::new(None))
 }
 
@@ -25,9 +25,8 @@ pub fn voxygen_renderer_init(width: u32, height: u32) -> Result<(), String> {
         initialized: true,
     };
     let boxed = Box::new(state);
-    let ptr = Box::into_raw(boxed);
-    let non_null = NonNull::new(ptr).expect("voxygen renderer state pointer is null");
-    voxygen_renderer_storage().lock().unwrap().replace(non_null);
+    let ptr = Box::into_raw(boxed) as *mut VoxygenRendererState;
+    voxygen_renderer_storage().lock().unwrap().replace(ptr);
     Ok(())
 }
 
@@ -43,7 +42,7 @@ pub fn voxygen_renderer_render() -> Result<(), String> {
 /// Resize voxygen renderer.
 pub fn voxygen_renderer_resize(width: u32, height: u32) {
     if let Some(ptr) = voxygen_renderer_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref()) {
-        let state = unsafe { ptr.as_mut() };
+        let state = unsafe { &mut *ptr };
         state.width = width;
         state.height = height;
     }
@@ -51,5 +50,9 @@ pub fn voxygen_renderer_resize(width: u32, height: u32) {
 
 /// Shutdown voxygen renderer bridge.
 pub fn voxygen_renderer_shutdown() {
-    voxygen_renderer_storage().lock().unwrap().take();
+    if let Some(ptr) = voxygen_renderer_storage().lock().unwrap().take() {
+        unsafe {
+            drop(Box::from_raw(ptr));
+        }
+    }
 }
