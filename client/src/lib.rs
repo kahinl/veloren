@@ -348,6 +348,21 @@ pub struct Client {
     missing_plugins: HashSet<PluginHash>,
     /// Locally cached plugins needed by the server
     local_plugins: Vec<PathBuf>,
+
+    /// Mobile performance tier for Android optimizations
+    mobile_perf_tier: MobilePerfTier,
+}
+
+/// Mobile performance tier for Android-specific optimizations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum MobilePerfTier {
+    /// Default/desktop behavior, no mobile-specific limits
+    #[default]
+    None,
+    /// Aggressive limits for low-end Android devices
+    Low,
+    /// Moderate limits for mid-range Android devices
+    Medium,
 }
 
 /// Holds data related to the current players characters, as well as some
@@ -1025,6 +1040,8 @@ impl Client {
             view_distance: None,
             lod_distance: 4.0,
             loaded_distance: 0.0,
+
+            mobile_perf_tier: MobilePerfTier::default(),
 
             pending_chunks: HashMap::new(),
             target_time_of_day: None,
@@ -2504,11 +2521,14 @@ impl Client {
                         } else {
                             drop(terrain);
                             if !skip_mode && !self.pending_chunks.contains_key(key) {
-                                const TOTAL_PENDING_CHUNKS_LIMIT: usize = 12;
-                                const CURRENT_TICK_PENDING_CHUNKS_LIMIT: usize = 2;
-                                if self.pending_chunks.len() < TOTAL_PENDING_CHUNKS_LIMIT
-                                    && current_tick_send_chunk_requests
-                                        < CURRENT_TICK_PENDING_CHUNKS_LIMIT
+                                // Mobile-optimized chunk request limits
+                                let (total_limit, per_tick_limit) = match self.mobile_perf_tier {
+                                    MobilePerfTier::Low => (6, 1),
+                                    MobilePerfTier::Medium => (9, 2),
+                                    MobilePerfTier::None => (12, 2),
+                                };
+                                if self.pending_chunks.len() < total_limit
+                                    && current_tick_send_chunk_requests < per_tick_limit
                                 {
                                     self.send_msg_err(ClientGeneral::TerrainChunkRequest {
                                         key: *key,
@@ -3245,6 +3265,11 @@ impl Client {
 
     /// Get a mutable reference to the client's game state.
     pub fn state_mut(&mut self) -> &mut State { &mut self.state }
+
+    /// Set the mobile performance tier for Android optimizations.
+    pub fn set_mobile_perf_tier(&mut self, tier: MobilePerfTier) {
+        self.mobile_perf_tier = tier;
+    }
 
     /// Returns an iterator over the aliases of all the online players on the
     /// server

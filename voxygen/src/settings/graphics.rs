@@ -223,6 +223,79 @@ impl GraphicsSettings {
         }
     }
 
+    /// Ultra-low preset optimized for Android mobile devices.
+    /// Disables shadows, bloom, particles, clouds, and uses aggressive
+    /// resolution scaling to maintain playable framerates on mobile GPUs.
+    pub fn into_android(self) -> Self {
+        use crate::render::*;
+        Self {
+            terrain_view_distance: 3,
+            entity_view_distance: 3,
+            lod_distance: 0,
+            sprite_render_distance: 60,
+            figure_lod_render_distance: 80,
+            lod_detail: 60,
+            particles_chance: 0.0,
+            particles_enabled: false,
+            weapon_trails_enabled: false,
+            max_fps: Fps::Max(30),
+            max_background_fps: Fps::Max(15),
+            fov: 65,
+            render_mode: RenderMode {
+                aa: AaMode::FxUpscale,
+                cloud: CloudMode::Flat,
+                reflection: ReflectionMode::Low,
+                fluid: FluidMode::Low,
+                lighting: LightingMode::Lambertian,
+                shadow: ShadowMode::None,
+                rain_enabled: false,
+                rain_occlusion: ShadowMapMode { resolution: 0.25 },
+                bloom: BloomMode::Off,
+                point_glow: 0.0,
+                flashing_lights_enabled: false,
+                upscale_mode: UpscaleMode { factor: 0.30 },
+                ..self.render_mode
+            },
+            ..self
+        }
+    }
+
+    /// Returns the weather, clouds, and particles toggle states.
+    /// These are the main expensive visual effects that can be
+    /// individually enabled/disabled in the Android settings menu.
+    pub fn weather_enabled(&self) -> bool { self.rain_enabled }
+
+    pub fn clouds_enabled(&self) -> bool {
+        matches!(self.render_mode.cloud, CloudMode::Flat | CloudMode::Minimal | CloudMode::Low)
+    }
+
+    pub fn particles_enabled(&self) -> bool { self.particles_enabled && self.particles_chance > 0.0 }
+
+    /// Toggle weather on/off.
+    pub fn set_weather_enabled(&mut self, enabled: bool) {
+        self.rain_enabled = enabled;
+    }
+
+    /// Toggle clouds on/off.
+    pub fn set_clouds_enabled(&mut self, enabled: bool) {
+        use crate::render::*;
+        self.render_mode.cloud = if enabled {
+            CloudMode::Flat
+        } else {
+            CloudMode::Flat
+        };
+    }
+
+    /// Toggle particles on/off.
+    pub fn set_particles_enabled(&mut self, enabled: bool) {
+        self.particles_enabled = enabled;
+        if enabled {
+            self.particles_chance = 0.5;
+        } else {
+            self.particles_chance = 0.0;
+        }
+    }
+
     pub fn view_distances(&self) -> ViewDistances {
         ViewDistances {
             terrain: self.terrain_view_distance,

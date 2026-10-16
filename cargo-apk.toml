@@ -1,0 +1,22 @@
+members = ["client", "android-rust"]
+
+[package]
+name = "veloren-android"
+version = "0.1.0"
+
+[android]
+package = "com.veloren.client"
+min_sdk = 24
+target_sdk = 34
+compile_sdk = 34
+
+[apk]
+name = "Veloren"
+
+[build]
+target = "aarch64-linux-android"
+profile = "release"
+
+[[feature]]
+name = "default"
+enable = ["simd"]
