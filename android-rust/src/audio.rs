@@ -48,8 +48,8 @@ impl Drop for Audio {
     fn drop(&mut self) {}
 }
 
-/// Global audio instance, stored as a raw pointer across JNI calls.
-/// Use Box<Audio> instead of *mut Audio to ensure Send + Sync.
+/// Global audio instance, stored as Box<Audio> across JNI calls.
+/// Box<Audio> is Send + Sync because Audio implements both.
 static AUDIO: OnceLock<Mutex<Option<Box<Audio>>>> = OnceLock::new();
 
 fn audio_storage() -> &'static Mutex<Option<Box<Audio>>> {

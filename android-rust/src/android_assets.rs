@@ -1,11 +1,10 @@
 use std::ffi::CString;
 use std::io;
-use std::path::PathBuf;
 use std::ptr::NonNull;
 
 use assets_manager::{
-    source::{DirEntry, FileContent, Source},
-    BoxedError,
+    source::{DirEntry, Source},
+    BoxedError, FileContent,
 };
 
 pub struct AndroidAssets {
@@ -51,8 +50,13 @@ impl AndroidAssets {
 
         let len = unsafe { ndk_sys::AAsset_getLength(asset_ptr) } as usize;
         let mut buf = vec![0u8; len];
-        let bytes_read =
-            unsafe { ndk_sys::AAsset_read(asset_ptr, buf.as_mut_ptr() as *mut std::ffi::c_void, len) };
+        let bytes_read = unsafe {
+            ndk_sys::AAsset_read(
+                asset_ptr,
+                buf.as_mut_ptr() as *mut std::ffi::c_void,
+                len,
+            )
+        };
 
         unsafe { ndk_sys::AAsset_close(asset_ptr) };
 
@@ -110,7 +114,7 @@ impl Source for AndroidAssets {
             let dot_pos = name.rfind('.');
             let ext = dot_pos.map(|p| &name[p + 1..]).unwrap_or("");
 
-            f(DirEntry::File(&path, ext));
+            f(DirEntry::File(path, ext.to_string()));
         }
 
         unsafe { ndk_sys::AAssetDir_close(dir_ptr) };

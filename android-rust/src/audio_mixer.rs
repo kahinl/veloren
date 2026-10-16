@@ -5,10 +5,6 @@ use std::f32::consts::PI;
 use std::sync::OnceLock;
 
 /// A simple audio mixer that produces PCM16 stereo output.
-///
-/// Multiple sound sources can be mixed together. The mixer generates
-/// interleaved int16 stereo samples (L, R, L, R, ...) suitable for
-/// enqueuing into OpenSL ES via `velorenAudioPush`.
 pub struct AudioMixer {
     sample_rate: u32,
     sources: Vec<Box<dyn AudioSource + Send>>,
@@ -17,11 +13,9 @@ pub struct AudioMixer {
 
 /// A single audio source that generates samples on demand.
 trait AudioSource: Send {
-    /// Fill `buffer` (interleaved stereo f32 samples, frames = len/2) with mixed audio.
     fn generate(&mut self, sample_rate: u32, buffer: &mut [f32]);
 }
 
-/// Silence source — produces zeros.
 struct SilenceSource;
 
 impl AudioSource for SilenceSource {
@@ -30,7 +24,6 @@ impl AudioSource for SilenceSource {
     }
 }
 
-/// Sine wave source for testing (placeholder until real SFX is connected).
 struct SineSource {
     frequency: f32,
     phase: f32,
@@ -46,14 +39,6 @@ impl SineSource {
             amplitude,
             playing: true,
         }
-    }
-
-    fn stop(&mut self) {
-        self.playing = false;
-    }
-
-    fn start(&mut self) {
-        self.playing = true;
     }
 }
 
@@ -80,7 +65,7 @@ impl AudioMixer {
     pub fn new(sample_rate: u32) -> Self {
         let mut sources: Vec<Box<dyn AudioSource + Send>> = Vec::new();
         sources.push(Box::new(SilenceSource));
-        sources.push(Box::new(SineSource::new(440.0, 0.1))); // A4 test tone
+        sources.push(Box::new(SineSource::new(440.0, 0.1)));
 
         Self {
             sample_rate,
@@ -93,7 +78,6 @@ impl AudioMixer {
         self.master_volume = volume.clamp(0.0, 1.0);
     }
 
-    /// Generate `num_frames` stereo frames of PCM16 interleaved output.
     pub fn generate_pcm16_stereo(&mut self, num_frames: usize) -> Vec<i16> {
         let mut f32_buffer = vec![0.0f32; num_frames * 2];
         for source in &mut self.sources {
@@ -108,11 +92,7 @@ impl AudioMixer {
         pcm16
     }
 
-    pub fn stop_all(&mut self) {
-        // Iterate sources and stop any playing sine waves
-        // Since we can't downcast through the trait, we just silence everything
-        // by not playing new audio (the silence source dominates)
-    }
+    pub fn stop_all(&mut self) {}
 }
 
 static AUDIO_MIXER: OnceLock<std::sync::Mutex<Option<AudioMixer>>> = OnceLock::new();
@@ -149,10 +129,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
     };
 
     let pcm16 = mixer.generate_pcm16_stereo(num_frames as usize);
-    let bytes: Vec<u8> = pcm16
-        .iter()
-        .flat_map(|s| s.to_le_bytes())
-        .collect();
+    let bytes: Vec<u8> = pcm16.iter().flat_map(|s| s.to_le_bytes()).collect();
 
     env.byte_array_from_slice(&bytes).unwrap_or_default()
 }

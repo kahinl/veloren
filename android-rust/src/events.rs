@@ -11,15 +11,15 @@ static EVENT_CALLBACK: OnceLock<std::sync::Mutex<Option<EventCallback>>> = OnceL
 struct EventCallback {
     /// Global reference to the Java object implementing the callback interface.
     object: jni::objects::GlobalRef,
-    /// Method ID of `onEvent(type: String, data: String)` on that object.
-    method_id: jni::objects::JMethodID,
+    /// Method ID of `onEvent(type: String, data: String)` on that object (raw pointer).
+    method_id: jmethodID,
 }
 
 unsafe impl Send for EventCallback {}
 unsafe impl Sync for EventCallback {}
 
 impl EventCallback {
-    pub fn new(object: jni::objects::GlobalRef, method_id: jni::objects::JMethodID) -> Self {
+    pub fn new(object: jni::objects::GlobalRef, method_id: jmethodID) -> Self {
         Self { object, method_id }
     }
 
@@ -29,10 +29,10 @@ impl EventCallback {
         let j_data = env.new_string(data)?;
 
         env.call_method(
-            self.object.as_obj(),
+            self.object.clone(),
             self.method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
-            &[(&j_type).into(), (&j_data).into()],
+            &[j_type.into(), j_data.into()],
         )?;
 
         Ok(())
@@ -44,6 +44,7 @@ fn event_callback_storage() -> &'static std::sync::Mutex<Option<EventCallback>> 
 }
 
 /// JNI: `velorenSetEventCallback(callbackObject)`
+/// Registers a Java object to receive events from the Rust client.
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallback(
     mut env: JNIEnv,
@@ -86,6 +87,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
 }
 
 /// JNI: `velorenSendEvent(eventType: String, data: String)`
+/// Allows Java to send an event back to Rust (e.g., UI button press).
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
     mut env: JNIEnv,
@@ -127,6 +129,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
 }
 
 /// Forward Veloren client events to the Java callback.
+/// Call this from `velorenTick` after getting events.
 pub fn forward_events(env: &mut JNIEnv, events: &[veloren_client::Event]) {
     let binding = event_callback_storage().lock().unwrap();
     let callback = binding.as_ref();

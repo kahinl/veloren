@@ -1,9 +1,6 @@
 use std::sync::{Mutex, OnceLock};
 
 /// Placeholder bridge to voxygen's wgpu renderer.
-///
-/// When voxygen is ported to Android (winit removed, ANativeWindow surface used directly),
-/// this module will instantiate voxygen::Renderer and forward render calls.
 static VOXEGON_RENDERER: OnceLock<Mutex<Option<Box<VoxygenRendererState>>>> = OnceLock::new();
 
 struct VoxygenRendererState {
@@ -16,7 +13,6 @@ fn voxygen_renderer_storage() -> &'static Mutex<Option<Box<VoxygenRendererState>
     VOXEGON_RENDERER.get_or_init(|| Mutex::new(None))
 }
 
-/// Initialize voxygen renderer bridge.
 pub fn voxygen_renderer_init(width: u32, height: u32) -> Result<(), String> {
     let state = VoxygenRendererState {
         width,
@@ -30,18 +26,15 @@ pub fn voxygen_renderer_init(width: u32, height: u32) -> Result<(), String> {
     Ok(())
 }
 
-/// Render one frame using voxygen (placeholder — clears screen until full port).
 pub fn voxygen_renderer_render() -> Result<(), String> {
-    let mut binding = voxygen_renderer_storage().lock().unwrap();
+    let binding = voxygen_renderer_storage().lock().unwrap();
     let state = binding.as_ref();
-
     let Some(_state) = state else {
         return Err("Voxygen renderer not initialized".to_string());
     };
     Ok(())
 }
 
-/// Resize voxygen renderer.
 pub fn voxygen_renderer_resize(width: u32, height: u32) {
     let mut binding = voxygen_renderer_storage().lock().unwrap();
     if let Some(state) = binding.as_mut() {
@@ -50,7 +43,6 @@ pub fn voxygen_renderer_resize(width: u32, height: u32) {
     }
 }
 
-/// Shutdown voxygen renderer bridge.
 pub fn voxygen_renderer_shutdown() {
     voxygen_renderer_storage().lock().unwrap().take();
 }
