@@ -107,8 +107,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             std::sync::Arc::clone(&rt),
             None,
             &provider,
-            stage_cb.as_ref(),
-            builder_cb.as_ref(),
+            Box::leak(stage_cb),
+            Box::leak(builder_cb),
             PathBuf::from("/data/data/com.veloren.client/files"),
             ClientType::Game,
         )
@@ -131,9 +131,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         }
     }
 }
-
-fn stage_callback(_stage: ClientInitStage) {}
-fn builder_callback(_builder: &mut DispatcherBuilder) {}
 
 /// Run one tick of the Veloren client.
 /// Called from Java each frame: `velorenTick(clientPtr, dt)`
