@@ -289,7 +289,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset(
     mut env: JNIEnv,
     _class: JClass,
     path: JString,
-) -> JObject {
+) -> JObject<'_> {
     let path_str: String = env
         .get_string(path)
         .map(|s| s.to_string_lossy().into_owned())

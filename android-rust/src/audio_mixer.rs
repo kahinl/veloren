@@ -141,7 +141,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
     mut env: JNIEnv,
     _class: JClass,
     num_frames: jint,
-) -> JByteArray {
+) -> JByteArray<'_> {
     let mixer = audio_mixer_storage().lock().unwrap().as_mut();
     let Some(mixer) = mixer else {
         return env.byte_array_from_slice(&[]).unwrap_or_else(|_| JByteArray::null());

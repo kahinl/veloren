@@ -162,21 +162,6 @@ impl Source for AndroidAssets {
         }
     }
 
-    fn path_of(&self, entry: DirEntry) -> PathBuf {
-        match entry {
-            DirEntry::File(id, ext) => PathBuf::from(format!(
-                "{}.{}",
-                id,
-                ext.unwrap_or_default()
-            )),
-            DirEntry::Directory(id) => PathBuf::from(id),
-        }
-    }
-
-    fn root(&self) -> PathBuf {
-        PathBuf::from("")
-    }
-
     fn configure_hot_reloading(&self, _events: assets_manager::hot_reloading::EventSender) -> Result<(), BoxedError> {
         // Hot reloading is not supported on Android assets (read-only APK).
         Ok(())

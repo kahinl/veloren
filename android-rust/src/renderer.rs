@@ -49,14 +49,14 @@ impl Renderer {
                 .map_err(|e| format!("Failed to create wgpu surface: {e}"))?
         };
 
-        let adapter = futures::executor::block_on(instance.request_adapter(&RequestAdapterOptions {
+        let adapter = futures_util::executor::block_on(instance.request_adapter(&RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         }))
         .ok_or_else(|| "No wgpu adapter found".to_string())?;
 
-        let (device, queue) = futures::executor::block_on(
+        let (device, queue) = futures_util::executor::block_on(
             adapter.request_device(&wgpu::DeviceDescriptor::default(), None),
         )
         .map_err(|e| format!("Failed to create wgpu device: {e}"))?;
