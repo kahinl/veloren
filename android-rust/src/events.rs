@@ -30,7 +30,7 @@ impl EventCallback {
 
         env.call_method(
             &self.object,
-            self.method_id.as_raw(),
+            self.method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
             &[(&j_type).into(), (&j_data).into()],
         )?;

@@ -121,7 +121,7 @@ impl Source for AndroidAssets {
     fn exists(&self, entry: DirEntry) -> bool {
         match entry {
             DirEntry::File(id, ext) => {
-                let filename = format!("{}.{}", id, ext.unwrap_or_default());
+                let filename = format!("{}.{}", id, ext.unwrap_or(""));
                 let c_filename = match CString::new(filename) {
                     Ok(s) => s,
                     Err(_) => return false,
