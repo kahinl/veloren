@@ -197,11 +197,11 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         statusText.text = "Veloren: perf tier $perfTier - tap screen to play"
     }
 
-    override fun onSurfaceCreated(holder: SurfaceHolder) {
-        // Surface is ready; renderer will be created in onSurfaceChanged when we know the size
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        // Surface is ready; renderer will be created in surfaceChanged when we know the size
     }
 
-    override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
         surfaceWidth = w
         surfaceHeight = h
         cachedSurface = holder.surface
@@ -219,7 +219,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    override fun onSurfaceDestroyed(holder: SurfaceHolder) {
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
         cachedSurface = null
         surfaceWidth = 0
         surfaceHeight = 0

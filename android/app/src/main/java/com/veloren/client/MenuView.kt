@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.*
 import android.text.InputType
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
 
@@ -249,19 +250,16 @@ class MenuView @JvmOverloads constructor(
                     }
                     if (toggleWeather.contains(x, y)) {
                         weatherEnabled = !weatherEnabled
-                        onMenuAction?.onWeatherToggled(weatherEnabled)
                         invalidate()
                         return true
                     }
                     if (toggleClouds.contains(x, y)) {
                         cloudsEnabled = !cloudsEnabled
-                        onMenuAction?.onCloudsToggled(cloudsEnabled)
                         invalidate()
                         return true
                     }
                     if (toggleParticles.contains(x, y)) {
                         particlesEnabled = !particlesEnabled
-                        onMenuAction?.onParticlesToggled(particlesEnabled)
                         invalidate()
                         return true
                     }

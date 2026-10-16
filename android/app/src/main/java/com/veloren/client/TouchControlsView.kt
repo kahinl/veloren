@@ -5,6 +5,7 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.sqrt
 
 /**
  * Dokunmatik oyun kontrolleri overlay'i.
@@ -122,16 +123,17 @@ class TouchControlsView @JvmOverloads constructor(
         canvas.drawCircle(joystickCenter.x, joystickCenter.y, joystickRadius * 0.6f, centerPaint)
     }
 
-    private fun drawButton(canvas: Canvas, rect: RectF, label: String, color: Int) {
+    private fun drawButton(canvas: Canvas, rect: RectF, label: String, buttonColor: Int) {
+        val semiTransparent = Color.argb(120, Color.red(buttonColor), Color.green(buttonColor), Color.blue(buttonColor))
         val buttonPaint = Paint().apply {
-            color = Color.argb(120, color.red(), color.green(), color.blue())
+            this.color = semiTransparent
             style = Paint.Style.FILL
             isAntiAlias = true
         }
         canvas.drawRoundRect(rect, 16f, 16f, buttonPaint)
 
         val borderPaint = Paint().apply {
-            color = Color.WHITE
+            this.color = Color.WHITE
             style = Paint.Style.STROKE
             strokeWidth = 3f
             isAntiAlias = true
@@ -139,7 +141,7 @@ class TouchControlsView @JvmOverloads constructor(
         canvas.drawRoundRect(rect, 16f, 16f, borderPaint)
 
         val textPaint = Paint().apply {
-            color = Color.WHITE
+            this.color = Color.WHITE
             textSize = 40f
             isAntiAlias = true
             textAlign = Paint.Align.CENTER
