@@ -26,13 +26,13 @@ use veloren_common::comp::controller::{ControllerInputs, InputKind};
 use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
-/// The Veloren client instance, stored as a Box in static storage.
-static CLIENT: OnceLock<Mutex<Option<Box<Client>>>> = OnceLock::new();
+/// The Veloren client instance, stored as an Arc in static storage.
+static CLIENT: OnceLock<Mutex<Option<Arc<Client>>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
-/// The wgpu renderer instance, stored as a Box in static storage.
-static RENDERER: OnceLock<Mutex<Option<Box<renderer::Renderer>>>> = OnceLock::new();
+/// The wgpu renderer instance, stored as an Arc in static storage.
+static RENDERER: OnceLock<Mutex<Option<Arc<renderer::Renderer>>>> = OnceLock::new();
 
 /// The Android AAssetManager, stored as a raw pointer in static storage.
 #[cfg(target_os = "android")]
@@ -42,7 +42,7 @@ static ASSET_MANAGER: OnceLock<Mutex<Option<*mut ndk_sys::AAssetManager>>> = Onc
 #[cfg(target_os = "android")]
 static ASSET_CACHE: OnceLock<Mutex<Option<assets_manager::AssetCache>>> = OnceLock::new();
 
-fn client_storage() -> &'static Mutex<Option<Box<Client>>> {
+fn client_storage() -> &'static Mutex<Option<Arc<Client>>> {
     CLIENT.get_or_init(|| Mutex::new(None))
 }
 
@@ -54,7 +54,7 @@ fn last_tick_storage() -> &'static Mutex<Option<Instant>> {
     LAST_TICK.get_or_init(|| Mutex::new(None))
 }
 
-fn renderer_storage() -> &'static Mutex<Option<Box<renderer::Renderer>>> {
+fn renderer_storage() -> &'static Mutex<Option<Arc<renderer::Renderer>>> {
     RENDERER.get_or_init(|| Mutex::new(None))
 }
 
@@ -111,7 +111,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
 
     match client_result {
         Ok(client) => {
-            client_storage().lock().unwrap().replace(Some(client));
+            client_storage().lock().unwrap().replace(Some(Arc::new(client)));
             runtime_storage().lock().unwrap().replace(runtime);
             last_tick_storage().lock().unwrap().replace(Instant::now());
 
@@ -133,8 +133,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     _class: JClass,
     dt: jfloat,
 ) -> jint {
-    let mut client_guard = client_storage().lock().unwrap();
-    let Some(client) = client_guard.as_mut() else {
+    let client_guard = client_storage().lock().unwrap();
+    let Some(client) = client_guard.as_ref() else {
         return -1;
     };
 
@@ -181,7 +181,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
         }
     };
 
-    renderer_storage().lock().unwrap().replace(Some(renderer));
+    renderer_storage().lock().unwrap().replace(Some(Arc::new(renderer)));
     0
 }
 
@@ -192,8 +192,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    let mut renderer_guard = renderer_storage().lock().unwrap();
-    let Some(renderer) = renderer_guard.as_mut() else {
+    let renderer_guard = renderer_storage().lock().unwrap();
+    let Some(renderer) = renderer_guard.as_ref() else {
         return -1;
     };
 
