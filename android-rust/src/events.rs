@@ -1,6 +1,6 @@
 use jni::JNIEnv;
-use jni::objects::{JClass, JObject, JString};
-use jni::sys::{jint, jmethodID};
+use jni::objects::{JClass, JObject, JMethodID, JString};
+use jni::sys::_jmethodID;
 use std::sync::{Mutex, OnceLock};
 
 use veloren_client::Client;
@@ -12,14 +12,14 @@ struct EventCallback {
     /// Global reference to the Java object implementing the callback interface.
     object: jni::objects::GlobalRef,
     /// Method ID of `onEvent(type: String, data: String)` on that object (raw pointer).
-    method_id: jmethodID,
+    method_id: *mut _jmethodID,
 }
 
 unsafe impl Send for EventCallback {}
 unsafe impl Sync for EventCallback {}
 
 impl EventCallback {
-    pub fn new(object: jni::objects::GlobalRef, method_id: jmethodID) -> Self {
+    pub fn new(object: jni::objects::GlobalRef, method_id: *mut _jmethodID) -> Self {
         Self { object, method_id }
     }
 
@@ -27,12 +27,13 @@ impl EventCallback {
     pub fn send(&self, env: &mut JNIEnv, event_type: &str, data: &str) -> Result<(), jni::errors::Error> {
         let j_type = env.new_string(event_type)?;
         let j_data = env.new_string(data)?;
+        let method_id = unsafe { JMethodID::from_raw(self.method_id) };
 
         env.call_method(
-            JObject::from(self.object.clone()),
-            self.method_id,
+            self.object.as_obj(),
+            method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
-            &[j_type.into_inner().into(), j_data.into_inner().into()],
+            &[&j_type.into(), &j_data.into()],
         )?;
 
         Ok(())
@@ -64,7 +65,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
         "onEvent",
         "(Ljava/lang/String;Ljava/lang/String;)V",
     ) {
-        Ok(mid) => mid,
+        Ok(mid) => mid.into_raw(),
         Err(e) => {
             eprintln!("Failed to get onEvent method ID: {:?}", e);
             return -2;
