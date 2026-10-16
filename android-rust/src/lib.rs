@@ -254,7 +254,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
 ) -> jint {
     // Stub: ndk-sys 0.6 does not export AAssetManager_fromJava.
     // Real implementation needs JNI call to get ANativeWindow/AAssetManager.
-    let mgr_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+    let mgr_ptr: *mut ndk_sys::AAssetManager = std::ptr::null_mut();
     let _ = env;
     let _ = asset_manager;
 

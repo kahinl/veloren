@@ -49,9 +49,10 @@ impl Drop for Audio {
 }
 
 /// Global audio instance, stored as a raw pointer across JNI calls.
-static AUDIO: OnceLock<Mutex<Option<*mut Audio>>> = OnceLock::new();
+/// Use Box<Audio> instead of *mut Audio to ensure Send + Sync.
+static AUDIO: OnceLock<Mutex<Option<Box<Audio>>>> = OnceLock::new();
 
-fn audio_storage() -> &'static Mutex<Option<*mut Audio>> {
+fn audio_storage() -> &'static Mutex<Option<Box<Audio>>> {
     AUDIO.get_or_init(|| Mutex::new(None))
 }
 
@@ -62,7 +63,11 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioInit(
     _class: JClass,
 ) -> jint {
     match Audio::new() {
-        Ok(_) => {
+        Ok(audio) => {
+            audio_storage()
+                .lock()
+                .unwrap()
+                .replace(Box::new(audio));
             println!("OpenSL ES audio initialized (stub)");
             0
         }
@@ -89,6 +94,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioShutdown
     _env: JNIEnv,
     _class: JClass,
 ) {
+    audio_storage().lock().unwrap().take();
 }
 
 /// Silence the audio (enqueue silence buffers).

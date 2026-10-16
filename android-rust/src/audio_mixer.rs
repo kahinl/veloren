@@ -142,7 +142,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
     _class: JClass,
     num_frames: jint,
 ) -> JByteArray<'a> {
-    let mixer = audio_mixer_storage().lock().unwrap().as_mut();
+    let binding = audio_mixer_storage().lock().unwrap();
+    let mixer = binding.as_mut();
     let Some(mixer) = mixer else {
         return env.byte_array_from_slice(&[]).unwrap_or_default();
     };
@@ -163,7 +164,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerSet
     _class: JClass,
     volume: jfloat,
 ) {
-    if let Some(mixer) = audio_mixer_storage().lock().unwrap().as_mut() {
+    let binding = audio_mixer_storage().lock().unwrap();
+    if let Some(mixer) = binding.as_mut() {
         mixer.set_master_volume(volume);
     }
 }

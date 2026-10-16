@@ -1,11 +1,10 @@
-use std::ptr::null_mut;
 use std::sync::{Mutex, OnceLock};
 
 /// Placeholder bridge to voxygen's wgpu renderer.
 ///
 /// When voxygen is ported to Android (winit removed, ANativeWindow surface used directly),
 /// this module will instantiate voxygen::Renderer and forward render calls.
-static VOXEGON_RENDERER: OnceLock<Mutex<Option<*mut VoxygenRendererState>>> = OnceLock::new();
+static VOXEGON_RENDERER: OnceLock<Mutex<Option<Box<VoxygenRendererState>>>> = OnceLock::new();
 
 struct VoxygenRendererState {
     width: u32,
@@ -13,10 +12,7 @@ struct VoxygenRendererState {
     initialized: bool,
 }
 
-unsafe impl Send for VoxygenRendererState {}
-unsafe impl Sync for VoxygenRendererState {}
-
-fn voxygen_renderer_storage() -> &'static Mutex<Option<*mut VoxygenRendererState>> {
+fn voxygen_renderer_storage() -> &'static Mutex<Option<Box<VoxygenRendererState>>> {
     VOXEGON_RENDERER.get_or_init(|| Mutex::new(None))
 }
 
@@ -27,15 +23,18 @@ pub fn voxygen_renderer_init(width: u32, height: u32) -> Result<(), String> {
         height,
         initialized: true,
     };
-    let boxed = Box::new(state);
-    let ptr = Box::into_raw(boxed) as *mut VoxygenRendererState;
-    voxygen_renderer_storage().lock().unwrap().replace(ptr);
+    voxygen_renderer_storage()
+        .lock()
+        .unwrap()
+        .replace(Box::new(state));
     Ok(())
 }
 
 /// Render one frame using voxygen (placeholder — clears screen until full port).
 pub fn voxygen_renderer_render() -> Result<(), String> {
-    let state = voxygen_renderer_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref());
+    let binding = voxygen_renderer_storage().lock().unwrap();
+    let state = binding.as_ref();
+
     let Some(_state) = state else {
         return Err("Voxygen renderer not initialized".to_string());
     };
@@ -44,9 +43,8 @@ pub fn voxygen_renderer_render() -> Result<(), String> {
 
 /// Resize voxygen renderer.
 pub fn voxygen_renderer_resize(width: u32, height: u32) {
-    if let Some(ptr) = voxygen_renderer_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref())
-    {
-        let state = unsafe { &mut *ptr };
+    let binding = voxygen_renderer_storage().lock().unwrap();
+    if let Some(state) = binding.as_mut() {
         state.width = width;
         state.height = height;
     }
@@ -54,9 +52,5 @@ pub fn voxygen_renderer_resize(width: u32, height: u32) {
 
 /// Shutdown voxygen renderer bridge.
 pub fn voxygen_renderer_shutdown() {
-    if let Some(ptr) = voxygen_renderer_storage().lock().unwrap().take() {
-        unsafe {
-            drop(Box::from_raw(ptr));
-        }
-    }
+    voxygen_renderer_storage().lock().unwrap().take();
 }
