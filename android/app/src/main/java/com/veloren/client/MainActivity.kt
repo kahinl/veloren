@@ -179,9 +179,9 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         // Configure thread count for big.LITTLE ARM architecture
         val cpuCores = Runtime.getRuntime().availableProcessors()
         val threadCount = when {
-            cpuCores <= 2 => 2
-            cpuCores <= 4 => 4
-            else => 6
+            cpuCores <= 2 -> 2
+            cpuCores <= 4 -> 4
+            else -> 6
         }
         velorenSetThreadCount(threadCount)
 
@@ -356,9 +356,9 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val cpuCores = Runtime.getRuntime().availableProcessors()
 
         return when {
-            totalRamGB <= 2 || cpuCores <= 2 => 1 // Low tier: <=2GB RAM or <=2 cores
-            totalRamGB <= 4 || cpuCores <= 4 => 2 // Medium tier: <=4GB RAM or <=4 cores
-            else => 0 // None: high-end device
+            totalRamGB <= 2 || cpuCores <= 2 -> 1 // Low tier: <=2GB RAM or <=2 cores
+            totalRamGB <= 4 || cpuCores <= 4 -> 2 // Medium tier: <=4GB RAM or <=4 cores
+            else -> 0 // None: high-end device
         }
     }
 
