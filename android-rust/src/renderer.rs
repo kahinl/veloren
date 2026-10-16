@@ -7,7 +7,8 @@ use wgpu::{
 };
 
 /// Wrapper around ANativeWindow pointer to make it Send + Sync.
-/// Raw pointers are always Send + Sync regardless of the pointee type.
+/// Raw pointers are always Send + Sync, but the compiler sometimes struggles
+/// with opaque FFI types.
 struct AndroidWindow(*mut ndk_sys::ANativeWindow);
 
 unsafe impl Send for AndroidWindow {}

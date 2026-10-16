@@ -26,8 +26,7 @@ use veloren_common::comp::controller::{ControllerInputs, InputKind};
 use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
-/// The Veloren client instance, stored as jlong (i64 raw pointer) in static storage.
-/// jlong is i64 which is always Send + Sync.
+/// The Veloren client instance, stored as jlong (raw pointer) in static storage.
 static CLIENT: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
@@ -71,7 +70,7 @@ fn asset_cache_storage() -> &'static Mutex<Option<assets_manager::AssetCache>> {
 
 /// Initialize the Veloren client and connect to a server.
 /// Called from Java: `velorenInit(serverAddress: String)`
-/// Returns: jlong (raw pointer to Box<Client> cast to jlong)
+/// Returns: jlong (raw pointer to Box<Client> as jlong)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     mut env: JNIEnv,
@@ -203,8 +202,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     _class: JClass,
     client_ptr: jlong,
 ) -> jint {
-    let renderer_guard = renderer_storage().lock().unwrap();
-    let Some(renderer_ptr) = renderer_guard.as_ref() else {
+    let renderer_ptr = renderer_storage().lock().unwrap().as_ref().copied();
+    let Some(renderer_ptr) = renderer_ptr else {
         return -1;
     };
 

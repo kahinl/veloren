@@ -41,7 +41,8 @@ pub fn voxygen_renderer_render() -> Result<(), String> {
 
 /// Resize voxygen renderer.
 pub fn voxygen_renderer_resize(width: u32, height: u32) {
-    if let Some(ptr) = voxygen_renderer_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref()) {
+    if let Some(ptr) = voxygen_renderer_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref())
+    {
         let state = unsafe { &mut *ptr };
         state.width = width;
         state.height = height;
