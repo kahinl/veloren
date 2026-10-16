@@ -1,0 +1,74 @@
+name: Android CI - Voxygen Check
+
+on:
+  push:
+    branches: [master, android-port]
+  pull_request:
+    branches: [master, android-port]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -C link-arg=-s
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-13
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-disabled: true
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: gradle wrapper
+
+      - name: Install Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+
+      - name: Find NDK clang
+        run: |
+          CLANG_PATH=$(find / -name 'aarch64-linux-android34-clang' -type f 2>/dev/null | head -1)
+          AR_PATH=$(find / -name 'llvm-ar' -type f 2>/dev/null | head -1)
+          echo "CLANG_PATH=$CLANG_PATH" >> $GITHUB_ENV
+          echo "AR_PATH=$AR_PATH" >> $GITHUB_ENV
+          echo "Found clang at: $CLANG_PATH"
+          echo "Found ar at: $AR_PATH"
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check Rust library for Android (aarch64)
+        run: cargo check --release --package veloren-voxygen --target aarch64-linux-android
+        env:
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.CLANG_PATH }}
+          CC_aarch64_linux_android: ${{ env.CLANG_PATH }}
+          AR_aarch64_linux_android: ${{ env.AR_PATH }}
