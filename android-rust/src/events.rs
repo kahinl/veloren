@@ -12,14 +12,14 @@ struct EventCallback {
     /// Global reference to the Java object implementing the callback interface.
     object: jni::objects::GlobalRef,
     /// Method ID of `onEvent(type: String, data: String)` on that object.
-    method_id: *mut jni_sys::_jmethodID,
+    method_id: jmethodID,
 }
 
 unsafe impl Send for EventCallback {}
 unsafe impl Sync for EventCallback {}
 
 impl EventCallback {
-    pub fn new(object: jni::objects::GlobalRef, method_id: *mut jni_sys::_jmethodID) -> Self {
+    pub fn new(object: jni::objects::GlobalRef, method_id: jmethodID) -> Self {
         Self { object, method_id }
     }
 
@@ -30,7 +30,7 @@ impl EventCallback {
 
         env.call_method(
             &self.object,
-            self.method_id,
+            self.method_id.as_raw(),
             "(Ljava/lang/String;Ljava/lang/String;)V",
             &[(&j_type).into(), (&j_data).into()],
         )?;
@@ -63,7 +63,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
         "onEvent",
         "(Ljava/lang/String;Ljava/lang/String;)V",
     ) {
-        Ok(mid) => mid.into_raw(),
+        Ok(mid) => mid,
         Err(e) => {
             eprintln!("Failed to get onEvent method ID: {:?}", e);
             return -2;
