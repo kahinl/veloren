@@ -254,7 +254,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
 ) -> jint {
     let mgr_ptr = unsafe {
         ndk_sys::AAssetManager_fromJava(
-            env.get_raw_jnienv() as *mut _,
+            env.get_raw() as *mut _,
             asset_manager.into_raw() as *mut _,
         )
     };
