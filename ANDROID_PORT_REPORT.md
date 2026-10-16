@@ -1,12 +1,14 @@
 # Android Port — Hata ve Durum Raporu
 
-## 1. Mevcut Durum (Durum: Kırık)
+## 1. Mevcut Durum (Durum: BUILD HATASI - Çalışmıyor)
 
 Depo: `kahinl/veloren`, branch: `android-port`  
-Fork: `kahinl/veloren` (kullanıcının kendi fork'u)  
-Origin: `veloren/veloren` (orijinal/upstream)  
+Fork: `kahinl/veloren`  
+Origin: `veloren/veloren`  
 GitHub Actions workflow: `.github/workflows/android.yml` ve `voxygen-check.yml`  
-Hedef: `android-port` branch'inden Android APK üretmek
+Hedef: `android-port` branch'inden Android APK üretmek  
+
+Son durum: **Rust kodu derlenmiyor**. `Client::new()` fonksiyonu `&dyn Fn(ClientInitStage) + Send + Sync` istiyor, ancak Rust closure'ları bu tipe coerce olmuyor. Tüm alternatifler denendi ve hepsi fail oldu.
 
 ## 2. Crate Sürümleri (Cargo.lock'dan)
 
@@ -24,149 +26,146 @@ Hedef: `android-port` branch'inden Android APK üretmek
 | veloren-client | local path | Client::new imzası değişmiş |
 | veloren-common | local path | ECS, Controller, ControllerInputs |
 
-## 3. Tespit Edilen Tüm Hatalar (Toplam ~60+)
+## 3. Tespit Edilen Tüm Hatalar
 
 ### A. JNI / jni 0.21 API Uyumsuzluğu
-1. `JMethodID: Into<JNIString>` değil — `call_method` metodu `JMethodID`'yi doğrudan kabul etmiyor, `JValue` dönüşüm gerekiyor
-2. `JObject<'a>` lifetime specifier gerekli — `JObject<'_>` kullanılıyor ama bazı yerlerde eksik
-3. `get_string(&event_type)` — referans bekleniyor, değer geçiliyor
-4. `JByteArray::null()` yok — `JByteArray::from_raw(null_mut())` veya `Default::default()` kullanmalı
-5. `GlobalRef` → `JObject` dönüşümü yok — `.into()` çalışmıyor
-6. `JObject::as_obj()` yok — `JObject` zaten obje, `as_obj()` gereksiz
-7. `JMethodID.as_raw()` yok — raw pointer'a erişim yok
+1. `JMethodID: Into<JNIString>` değil — `call_method` metodu `JMethodID`'yi doğrudan kabul etmiyor
+2. `JObject<'a>` lifetime specifier gerekli
+3. `get_string(&event_type)` — referans bekleniyor
+4. `JByteArray::null()` yok — `Default::default()` kullanılmalı
+5. `GlobalRef` → `JObject` dönüşümü yok
+6. `JObject::as_obj()` yok
+7. `JMethodID.as_raw()` yok
 8. `env.get_raw_jnienv()` yok — `env.get_raw()` ile değiştirildi
 
 ### B. Send / Sync (Statik depolama)
-9. `*mut Audio` cannot be sent between threads safely — `Audio` struct'u `Send`/`Sync` değil
-10. `*mut VoxygenRendererState` cannot be sent — `Send`/`Sync`Impl eksik
-11. `*mut jni_sys::_jmethodID` cannot be sent — raw pointer statikte
-12. `*mut ndk_sys::AAssetManager` cannot be sent — wrapper yok
+9. `*mut Audio` cannot be sent between threads safely
+10. `*mut VoxygenRendererState` cannot be sent
+11. `*mut jni_sys::_jmethodID` cannot be sent
+12. `*mut ndk_sys::AAssetManager` cannot be sent
 
 ### C. OnceLock Kullanımı
-13. `OnceLock<T>.lock()` metodu yok — `.get().unwrap().lock()` veya doğrudan `.get()` kullanılmalı
+13. `OnceLock<T>.lock()` metodu yok — `.get().unwrap().lock()` veya `.get()` kullanılmalı
 14. `once_cell::sync::Lazy` → `std::sync::OnceLock` geçişi
 
 ### D. assets_manager 0.13
-15. `FileContent` import eksik — `assets_manager::source::{DirEntry, FileContent, Source}` değil, `BoxedError, FileContent` ayrı
+15. `FileContent` import yolu — `assets_manager::source::FileContent` yok
 16. `FileContent::Owned(bytes)` — `Vec<u8>` değil, `Box<dyn AsRef<[u8]>>` istiyor
-17. `path_of` ve `root` trait metodu yok — `Source` trait'inde 0.13'te yok
+17. `path_of` ve `root` trait metodu yok
 18. `Vec<u8>: assets_manager::Asset` değil — `Box<str>` veya özel tür gerekli
 
 ### E. wgpu 22 + raw-window-handle 0.6
-19. `SurfaceTarget::AndroidNdk` yok — `SurfaceTarget::Window(Box<dyn WindowHandle>)` gerekli
+19. `SurfaceTarget::AndroidNdk` yok
 20. `Backends::VULKAN.primary()` yok — `Backends::VULKAN` direkt
-21. `futures::executor::block_on` yok — `futures_util::executor::block_on` veya kaldırılmalı
+21. `futures::executor::block_on` yok
 22. `raw-window-handle` 0.6'da `WindowHandle` trait değil, struct
 
 ### F. veloren-client API Değişiklikleri
-23. `veloren_client::init::{CredentialProvider, Credentials}` private modül — `veloren_client::{CredentialProvider, Credentials}` re-export kullan
-24. `client.state_mut().ecs_mut().write_storage::<Controller>()` — `write_storage` metodu yok, `WorldExt` gerekli
-25. `client_ptr.as_mut()` — `jlong` (i64) üzerinde `as_mut()` yok, `unsafe { &mut *(ptr as *mut Client) }`
+23. `veloren_client::init::{CredentialProvider, Credentials}` private modül
+24. `client.state_mut().ecs_mut().write_storage::<Controller>()` — `write_storage` metodu yok
+25. `client_ptr.as_mut()` — `jlong` (i64) üzerinde `as_mut()` yok
 26. `CharacterId::to_string()` yok — `Debug` (`{:?}`) kullanılmalı
-27. `GenericChatMsg<String>: Display` yok — `Debug` kullanılmalı
+27. `GenericChatMsg<String>: Display` yok
 28. `client.get_tick()` — `u64` döndürür, `as jint` cast gerekiyor
 
 ### G. Borrow Checker / Lifetime
-29. `runtime` moved in async block — `Arc<Runtime>` kullanarak çözülmeli
-30. `*mut client` immutable borrow conflict — `entity` önceden alınmalı
-31. `binding` not mutable — `let mut binding = ...`
-32. `unwrap_or_default()` on `&str` — yok, `unwrap_or("")` veya `String::new()`
+29. `runtime` moved in async block — `Arc<Runtime>` ile çözüldü
+30. `*mut client` immutable borrow conflict
+31. `binding` not mutable — `let mut binding = ...` ile düzeltildi
+32. `unwrap_or_default()` on `&str` — yok
 33. `ext.unwrap_or_default()` on `&str` — yok
 
 ### H. Diğer
-34. `AASSET_MODE_UNKNOWN` — `u32`, `i32` cast gerekli
-35. `PathBuf` import eksik
-36. `MAX_FPS` — `u32` vs `i32` cast
-37. `client_ptr` unused parameter warnings
+35. `AASSET_MODE_UNKNOWN` — `u32`, `i32` cast gerekli
+36. `PathBuf` import eksik
+37. `MAX_FPS` — `u32` vs `i32` cast
+38. `client_ptr` unused parameter warnings
+39. `Arc` import eksik
+
+### I. Client::new Closure Hatası (SON HATA)
+40. `Client::new()` expects `&dyn Fn(ClientInitStage) + Send + Sync`
+41. Closure'lar `&dyn Fn` tipine coerce olmuyor
+42. `Box<dyn Fn(ClientInitStage) + Send + Sync>` ile de denendi, fail
+43. `Box::leak()` ile `&mut dyn Fn` denendi, fail
+44. Named functions (`fn stage_callback(_: ClientInitStage) {}`) denendi, fail
+45. `fn` pointer直接` kullanımı denendi, fail
+46. `&dyn Fn(ClientInitStage) + Send + Sync` tipine dönüşüm yapılamıyor
 
 ## 4. Kod Dosyaları (android-rust/src/)
 
 | Dosya | Durum |
 |-------|-------|
-| lib.rs | JNI giriş noktaları, tüm exported fonksiyonlar |
-| renderer.rs | wgpu renderer — STUB (gerçek yok) |
-| audio.rs | OpenSL ES — STUB (semboller yok) |
+| lib.rs | JNI giriş noktaları — **ÇALIŞMADI** (Client::new close hatası) |
+| renderer.rs | wgpu renderer — STUB |
+| audio.rs | OpenSL ES — STUB |
 | audio_mixer.rs | PCM mixer — kısmi |
-| events.rs | Java event callback — kırık |
+| events.rs | Java event callback — **KIRDIK** (call_method JNIString hatası) |
 | voxygen_bridge.rs | Voxygen renderer — STUB |
-| android_assets.rs | AAssetManager — kısmi/kırık |
+| android_assets.rs | AAssetManager — kısmi |
+| Cargo.toml | jni=0.21, wgpu=22, assets_manager=0.13, ndk=0.6, ndk-sys=0.6 |
 
-## 5. Plan (Sıfırdan Rewrite)
+## 5. Deneyen Tüm Yaklaşımlar (Sıralı)
 
-### Fase 1: Cargo.toml Temizleme
-- `jni = "0.21"` tut
-- `ndk-sys` kaldırılacak veya doğru sürüm eklenecek
-- `assets_manager = "0.13"` tut
-- `wgpu = "22"` tut
-- `tokio`, `vek` tut
-- `once_cell` → `std::sync::OnceLock`
-- `futures-util` kaldırılacak
+### Senaryo 1: `&|client_ptr: ClientInitStage| {}` closure
+**Sonuç:** FAIL — `JMethodID: Into<JNIString>` hatası
 
-### Fase 2: lib.rs — JNI Giriş Noktaları
-Tüm `Java_com_veloren_client_MainActivity_*` fonksiyonları jni 0.21 API'sına uygun yazılacak:
-- `get_string(&jstring)` referans ile
-- `JObject<'a>` lifetime'lar
-- `byte_array_from_slice(&[u8])`
-- `call_method(obj, method_id, sig, args)` — method_id `JMethodID` tipinde
+### Senaryo 2: `|_stage: ClientInitStage| {}` (no `&`)
+**Sonuç:** FAIL — `JMethodID: Into<JNIString>` hatası
 
-### Fase 3: audio.rs — OpenSL ES Stub veya Gerçek
-- `Audio` struct'u `Send` + `Sync` impl ile
-- `OnceLock<Mutex<Option<Box<Audio>>>>` statik depolama
-- Stub implementation (OpenSL ES sembolleri yoksa)
+### Senaryo 3: `Box::new(|_stage| {}) as Box<dyn Fn(ClientInitStage) + Send + Sync>`
+**Sonuç:** FAIL — `JMethodID: Into<JNIString>` hatası
 
-### Fase 4: audio_mixer.rs — PCM Mixer
-- `dyn AudioSource + Send` trait bound
-- `JByteArray<'a>` lifetime
-- Mutex binding mutable
+### Senaryo 4: Named functions `fn stage_callback(_stage: ClientInitStage) {}`
+**Sonuç:** FAIL — `JMethodID: Into<JNIString>` hatası
 
-### Fase 5: events.rs — Java Event Callback
-- `JMethodID` tipini doğru kullan
-- `GlobalRef` → `JObject` dönüşümü
-- `Debug` formatları (`{:?}`) `Display` yerine
+### Senaryo 5: `&stage_callback` ve `&builder_callback` (fonksiyon pointer'ı)
+**Sonuç:** FAIL — `JMethodID: Into<JNIString>` hatası
 
-### Fase 6: android_assets.rs — Asset Yükleme
-- `FileContent::Owned(Box<dyn AsRef<[u8]>>)`
-- `AASSET_MODE_UNKNOWN as i32`
-- `DirEntry::File(&str, &str)` referanslar
+### Senaryo 6: `Box::new(...) as Box<dyn Fn(...) + Send + Sync>`
+**Sonuç:** FAIL — `JMethodID: Into<JNIString>` hatası
 
-### Fase 7: renderer.rs — wgpu Android Surface
-- `SurfaceTarget::Window(Box<dyn WindowHandle>)`
-- `AndroidNdkHandle` raw-window-handle 0.6
-- Stub implementation (gerçek render sonradan)
+### Senaryo 7: `Box::leak(box)` for `&mut dyn Fn(...) + Send + Sync`
+**Sonuç:** FAIL — `builder_cb does not live long enough`
 
-### Fase 8: voxygen_bridge.rs — Voxygen
-- `Box<VoxygenRendererState>` statik depolama
-- `Send` + `Sync` impl
+### Senaryo 8: `Client::new`'i çağırmayı bırak, dummy `ptr: *mut Client`
+**Sonuç:** FAIL — `match client_result` tipi `*mut Client` ama `Ok(mut client)` pattern bekleniyor
 
-### Fase 9: Derleme ve Test
-- `cargo check --lib` yerel (foldhash nightly hatası lokalde, Actions'da nightly toolchain olduğu için geçer)
-- GitHub Actions'dan geri bildirim al
-- Tek tek hata düzelt
+### Senaryo 9: `if ptr.is_null()` pattern ile dummy ptr
+**Sonuç:** FAIL — `match client_result` tipi `*mut veloren_client::Client`, `Ok(mut client)` pattern uyuşmuyor
 
-## 6. Kullanılacak Komutlar
+### Şu Anki Durum (Son Push)
+- `client_result` = `*mut Client` (dummy null pointer)
+- `match client_result` ifadesi `Ok(mut client)` pattern ile fail oluyor
+- `client_result` bir raw pointer, `Result` değil
+- `match` yapısı `Ok/Err` bekliyor ama `ptr` dönüyor
 
-```bash
-# Yerel kod kontrolü (foldhash hariç)
-cargo check --lib -p veloren-android
+## 6. Olası Çözüm Yolları
 
-# GitHub Actions durumu
-gh run list --repo kahinl/veloren --branch android-port
+### Seçenek A: `Client::new`'i tamamen kaldır
+`Client::new` yerine `Client::default()` veya `Client::new_without_client()` gibi bir şey yok. `Client::new` tek constructor.
 
-# Hata logu
-gh run view <RUN_ID> --repo kahinl/veloren --log-failed
+### Seçenek B: `Client::new`'i çağırmayı tamamen kaldır, sadece dummy ptr dön
+```rust
+let ptr: *mut Client = std::ptr::null_mut();
+client_storage().lock().unwrap().replace(Some(ptr));
+ptr as i64
 ```
+Bu derlenir ama oyun çalışmaz (null pointer).
 
-## 7. Beklenen Süre
+### Seçenek C: `Client::new`'in imzasını bul
+`veloren_client::Client::new` imzasını inceleyip doğru parametreleri bulmak gerekir. Muhtemelen `add_foreign_systems` ve `event_handler` callback'leri `Option` yapılmış olabilir veya farklı bir imza vardır.
 
-Bu bir **sıfırdan rewrite** işi. GitHub Actions'da tek tek hata düzeltmek iterate cycle'ı uzun. Yaklaşık 2-4 hafta sürebilir, çünkü:
-- Her push'ta Actions'da 10-15 dakika derleme
-- Her seferinde 5-20 yeni hata
-- Android NDK yok, yerel test yok
+### Seçenek D: `Client::new`'i çağırmayı tamamen bırak, sadece APK üret
+Derleme başarılı olur ama oyun çalışmaz. En azından APK dosyası elde edilir.
 
-## 8. Not: foldhash Nightly Hatası (Yerel)
+## 7. Sonraki Adımlar
 
-Yerel `cargo check`'de `foldhash 0.2.0` `#![feature]` hatası verir. Bu **yalnızca yerel stable toolchain'de** sorun. GitHub Actions `rust-toolchain` nightly kullanıyor, bu yüzden Actions'da sorun olmaz.
+1. `Client::new` çağrısını kaldırıp dummy pointer dön (Şu anki durum)
+2. Eğer derlenirse, APK üretilir
+3. Ardından `Client::new`'i nasıl çağıracağımız hakkında araştırma yapılır
+4. `ClientInitStage` tipi incelenir, `Send + Sync` kontrol edilir
+5. `Callback` türü doğru şekilde tanımlanır
 
 ---
 
-Durum: Plan tamamlandı. Şimdi kod yazımına başlanıyor.
+**Son Güncelleme:** 2026-10-16 — Tüm senaryolar denendi, hiçbiri çalışmadı. `Client::new`'in `&dyn Fn(ClientInitStage) + Send + Sync` istemesi çözülemedi. Şu anki kod derlenmiyor.

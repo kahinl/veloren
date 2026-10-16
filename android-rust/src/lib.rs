@@ -67,6 +67,12 @@ fn asset_cache_storage() -> &'static Mutex<Option<assets_manager::AssetCache>> {
     ASSET_CACHE.get_or_init(|| Mutex::new(None))
 }
 
+/// `Client::new`'in `&(dyn Fn(ClientInitStage) + Send + Sync)` parametresi
+/// bir isimli fonksiyon işaretçisiyle (fn pointer) sağlanıyor; closure
+/// doğrudan bu türe coerce olmuyor.
+fn stage_callback(_stage: ClientInitStage) {}
+fn builder_callback(_builder: &mut DispatcherBuilder) {}
+
 /// Initialize the Veloren client and connect to a server.
 /// Called from Java: `velorenInit(serverAddress: String)`
 /// Returns: i64 (raw pointer to Box<Client> cast to i64)
@@ -92,43 +98,36 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     let rt = std::sync::Arc::new(runtime);
     *runtime_storage().lock().unwrap() = Some(std::sync::Arc::clone(&rt));
 
-    let client_result = rt.block_on(async {
-        let addr = ConnectionArgs::Tcp {
-            hostname: server_addr.clone(),
-            prefer_ipv6: false,
-        };
-        let provider = StaticCredentialProvider;
-        // TODO: Client::new requires &dyn Fn(ClientInitStage) + Send + Sync
-        // which is hard to construct due to lifetime constraints.
-        // Stub: return a dummy pointer for now.
-        let ptr: *mut Client = std::ptr::null_mut();
-        println!("Veloren client init (stub), connected to {}", server_addr);
-        ptr
-    });
+    let addr = ConnectionArgs::Tcp {
+        hostname: server_addr.clone(),
+        prefer_ipv6: false,
+    };
 
-    let client_result = rt.block_on(async {
-        let addr = ConnectionArgs::Tcp {
-            hostname: server_addr.clone(),
-            prefer_ipv6: false,
-        };
-        let provider = StaticCredentialProvider;
-        // TODO: Client::new requires &dyn Fn(ClientInitStage) + Send + Sync
-        // which is hard to construct due to lifetime constraints.
-        // Stub: return a dummy pointer for now.
-        let ptr: *mut Client = std::ptr::null_mut();
-        println!("Veloren client init (stub), connected to {}", server_addr);
-        ptr
-    });
+    let client = rt.block_on(Client::new(
+        addr,
+        std::sync::Arc::clone(&rt),
+        None,
+        &StaticCredentialProvider,
+        &stage_callback,
+        builder_callback,
+        PathBuf::default(),
+        ClientType::Game,
+    ));
 
-    if client_result.is_null() {
-        eprintln!("Veloren client init failed");
-        0
-    } else {
-        *client_storage().lock().unwrap() = Some(client_result);
-        *last_tick_storage().lock().unwrap() = Some(Instant::now());
+    match client {
+        Ok(c) => {
+            let boxed = Box::new(c);
+            let ptr = Box::into_raw(boxed) as *mut Client as i64;
+            *client_storage().lock().unwrap() = Some(ptr);
+            *last_tick_storage().lock().unwrap() = Some(Instant::now());
 
-        println!("Veloren client initialized, connected to {}", server_addr);
-        client_result as i64
+            println!("Veloren client initialized, connected to {}", server_addr);
+            ptr
+        }
+        Err(e) => {
+            eprintln!("Veloren client init failed: {:?}", e);
+            0
+        }
     }
 }
 
