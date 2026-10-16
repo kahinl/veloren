@@ -91,6 +91,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
 
     let rt = Arc::new(runtime);
     runtime_storage().lock().unwrap().replace(Arc::clone(&rt));
+    let rt_clone = Arc::clone(&rt);
 
     let client_result = rt.block_on(async {
         let addr = ConnectionArgs::Tcp {
@@ -100,7 +101,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         let provider = StaticCredentialProvider;
         Client::new(
             addr,
-            rt,
+            rt_clone,
             None,
             &provider,
             &|_stage| {},
