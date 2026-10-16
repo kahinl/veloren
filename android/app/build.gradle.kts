@@ -73,14 +73,6 @@ tasks.register("copyVelorenAssets") {
     }
 }
 
-tasks.named("processDebugResources") {
-    dependsOn("copyVelorenAssets")
-}
-
-tasks.named("processReleaseResources") {
-    dependsOn("copyVelorenAssets")
-}
-
 dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
     implementation("androidx.core:core-ktx:1.12.0")
