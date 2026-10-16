@@ -18,7 +18,7 @@ mod renderer;
 mod voxygen_bridge;
 
 use veloren_client::Client;
-use veloren_client::{CredentialProvider, Credentials, WorldExt};
+use veloren_client::{ClientInitStage, CredentialProvider, Credentials, DispatcherBuilder, WorldExt};
 use veloren_client::ClientType;
 use veloren_client::addr::ConnectionArgs;
 use veloren_common::comp::controller::{ControllerInputs, InputKind};
@@ -103,8 +103,8 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             std::sync::Arc::clone(&rt),
             None,
             &provider,
-            &|_stage| {},
-            &|_builder| {},
+            |_stage: ClientInitStage| {},
+            |_builder: &mut DispatcherBuilder| {},
             PathBuf::from("/data/data/com.veloren.client/files"),
             ClientType::Game,
         )
