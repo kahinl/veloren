@@ -264,7 +264,7 @@ class TouchControlsView @JvmOverloads constructor(
 
         val dx = joystickTouchPos.x - joystickCenter.x
         val dy = joystickTouchPos.y - joystickCenter.y
-        val dist = (dx * dx + dy * dy).toDouble().sqrt().toFloat()
+        val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
 
         var normX = dx / joystickRadius
         var normY = dy / joystickRadius
