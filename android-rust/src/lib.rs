@@ -112,9 +112,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         Ok(mut client) => {
             let boxed = Box::new(client);
             let ptr = Box::into_raw(boxed) as *mut Client as jlong;
-            client_storage().lock().unwrap().replace(Some(ptr));
-            runtime_storage().lock().unwrap().replace(runtime);
-            last_tick_storage().lock().unwrap().replace(Instant::now());
+            *client_storage().lock().unwrap() = Some(ptr);
+            *runtime_storage().lock().unwrap() = Some(runtime);
+            *last_tick_storage().lock().unwrap() = Some(Instant::now());
 
             println!("Veloren client initialized, connected to {}", server_addr);
             ptr
@@ -183,7 +183,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
 
     let boxed = Box::new(renderer);
     let ptr = Box::into_raw(boxed) as *mut renderer::Renderer as jlong;
-    renderer_storage().lock().unwrap().replace(Some(ptr));
+    *renderer_storage().lock().unwrap() = Some(ptr);
     ptr
 }
 
@@ -245,7 +245,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
         return -1;
     }
 
-    asset_manager_storage().lock().unwrap().replace(mgr_ptr as jlong);
+    *asset_manager_storage().lock().unwrap() = Some(mgr_ptr as jlong);
 
     let android_source = match android_assets::AndroidAssets::from_raw(mgr_ptr) {
         Ok(s) => s,
@@ -256,7 +256,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
     };
 
     let cache = assets_manager::AssetCache::with_source(android_source);
-    asset_cache_storage().lock().unwrap().replace(cache);
+    *asset_cache_storage().lock().unwrap() = Some(cache);
 
     println!("Android AAssetManager set and asset cache initialized");
     0
@@ -293,7 +293,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
             .unwrap_or_else(|_| JObject::null());
     };
 
-    match cache.load_owned::<Vec<u8>>(format!("{id}.{ext}").as_str()) {
+    match cache.load_owned::<Box<str>>(format!("{id}.{ext}").as_str()) {
         Ok(bytes) => match env.byte_array_from_slice(&bytes) {
             Ok(arr) => arr.into(),
             Err(_) => JObject::null(),
@@ -560,7 +560,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMaxFps(
     fps: jint,
 ) {
     static MAX_FPS: OnceLock<Mutex<u32>> = OnceLock::new();
-    *MAX_FPS.get().unwrap().lock().unwrap() = fps.max(15).min(120);
+    *MAX_FPS.get().unwrap().lock().unwrap() = fps.max(15).min(120) as u32;
 }
 
 /// Get maximum FPS limit.

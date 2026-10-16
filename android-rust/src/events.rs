@@ -12,14 +12,14 @@ struct EventCallback {
     /// Global reference to the Java object implementing the callback interface.
     object: jni::objects::GlobalRef,
     /// Method ID of `onEvent(type: String, data: String)` on that object.
-    method_id: jmethodID,
+    method_id: jni::objects::JMethodID,
 }
 
 unsafe impl Send for EventCallback {}
 unsafe impl Sync for EventCallback {}
 
 impl EventCallback {
-    pub fn new(object: jni::objects::GlobalRef, method_id: jmethodID) -> Self {
+    pub fn new(object: jni::objects::GlobalRef, method_id: jni::objects::JMethodID) -> Self {
         Self { object, method_id }
     }
 
@@ -30,7 +30,7 @@ impl EventCallback {
 
         env.call_method(
             &self.object,
-            self.method_id,
+            &self.method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
             &[(&j_type).into(), (&j_data).into()],
         )?;

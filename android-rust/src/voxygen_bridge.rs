@@ -32,7 +32,7 @@ pub fn voxygen_renderer_init(width: u32, height: u32) -> Result<(), String> {
 
 /// Render one frame using voxygen (placeholder — clears screen until full port).
 pub fn voxygen_renderer_render() -> Result<(), String> {
-    let binding = voxygen_renderer_storage().lock().unwrap();
+    let mut binding = voxygen_renderer_storage().lock().unwrap();
     let state = binding.as_ref();
 
     let Some(_state) = state else {
@@ -43,7 +43,7 @@ pub fn voxygen_renderer_render() -> Result<(), String> {
 
 /// Resize voxygen renderer.
 pub fn voxygen_renderer_resize(width: u32, height: u32) {
-    let binding = voxygen_renderer_storage().lock().unwrap();
+    let mut binding = voxygen_renderer_storage().lock().unwrap();
     if let Some(state) = binding.as_mut() {
         state.width = width;
         state.height = height;
