@@ -1,6 +1,5 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass};
-use jni::sys::jint;
 use std::sync::{Mutex, OnceLock};
 
 /// OpenSL ES audio backend for Android.
@@ -61,7 +60,7 @@ fn audio_storage() -> &'static Mutex<Option<Box<Audio>>> {
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioInit(
     _env: JNIEnv,
     _class: JClass,
-) -> jint {
+) -> i32 {
     match Audio::new() {
         Ok(audio) => {
             audio_storage()
@@ -84,7 +83,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioPush(
     _env: JNIEnv,
     _class: JClass,
     _buffer: JByteArray,
-) -> jint {
+) -> i32 {
     -1
 }
 
@@ -102,6 +101,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioShutdown
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMute(
     _env: JNIEnv,
     _class: JClass,
-) -> jint {
+) -> i32 {
     -1
 }

@@ -1,6 +1,5 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass};
-use jni::sys::{jfloat, jint};
 use std::f32::consts::PI;
 use std::sync::OnceLock;
 
@@ -106,8 +105,8 @@ fn audio_mixer_storage() -> &'static std::sync::Mutex<Option<AudioMixer>> {
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerInit(
     _env: JNIEnv,
     _class: JClass,
-    sample_rate: jint,
-) -> jint {
+    sample_rate: i32,
+) -> i32 {
     audio_mixer_storage()
         .lock()
         .unwrap()
@@ -120,7 +119,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerIni
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGenerate<'a>(
     mut env: JNIEnv<'a>,
     _class: JClass,
-    num_frames: jint,
+    num_frames: i32,
 ) -> JByteArray<'a> {
     let mut binding = audio_mixer_storage().lock().unwrap();
     let mixer = binding.as_mut();
@@ -139,7 +138,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerSetMasterVolume(
     _env: JNIEnv,
     _class: JClass,
-    volume: jfloat,
+    volume: f32,
 ) {
     let mut binding = audio_mixer_storage().lock().unwrap();
     if let Some(mixer) = binding.as_mut() {

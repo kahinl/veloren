@@ -31,8 +31,8 @@ impl EventCallback {
 
         env.call_method(
             self.object.as_obj(),
-            method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
+            method_id,
             &[&j_type.into(), &j_data.into()],
         )?;
 
@@ -51,7 +51,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetEventCallb
     mut env: JNIEnv,
     _class: JClass,
     callback_object: JObject,
-) -> jint {
+) -> i32 {
     let callback_class = match env.get_object_class(&callback_object) {
         Ok(cls) => cls,
         Err(e) => {
@@ -95,7 +95,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
     _class: JClass,
     event_type: JString,
     data: JString,
-) -> jint {
+) -> i32 {
     let etype: String = env
         .get_string(&event_type)
         .map(|s| s.to_string_lossy().into_owned())
