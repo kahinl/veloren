@@ -1,7 +1,7 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JObject, JString};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 #[cfg(target_os = "android")]

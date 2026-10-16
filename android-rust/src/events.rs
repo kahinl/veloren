@@ -140,9 +140,9 @@ pub fn forward_events(env: &mut JNIEnv, events: &[veloren_client::Event]) {
 
         let _ = env.call_method(
             global_ref.as_obj(),
-            method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
-            &[j_type.into(), j_data.into()],
+            method_id,
+            &[jni::objects::JValue::Object(j_type.into_inner()), jni::objects::JValue::Object(j_data.into_inner())],
         );
     }
 }
