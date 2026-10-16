@@ -3,8 +3,8 @@ use std::io;
 use std::ptr::NonNull;
 
 use assets_manager::{
-    source::{DirEntry, FileContent, Source},
-    BoxedError,
+    source::{DirEntry, Source},
+    BoxedError, FileContent,
 };
 
 pub struct AndroidAssets {

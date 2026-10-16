@@ -90,7 +90,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     };
 
     let rt = std::sync::Arc::new(runtime);
-    runtime_storage().lock().unwrap().replace(std::sync::Arc::clone(&rt));
+    *runtime_storage().lock().unwrap() = Some(std::sync::Arc::clone(&rt));
 
     let client_result = rt.block_on(async {
         let addr = ConnectionArgs::Tcp {
