@@ -3,8 +3,8 @@ use std::io;
 use std::ptr::NonNull;
 
 use assets_manager::{
-    source::{DirEntry, Source},
-    BoxedError, FileContent,
+    source::{DirEntry, FileContent, Source},
+    BoxedError,
 };
 
 pub struct AndroidAssets {
@@ -114,7 +114,7 @@ impl Source for AndroidAssets {
             let dot_pos = name.rfind('.');
             let ext = dot_pos.map(|p| &name[p + 1..]).unwrap_or("");
 
-            f(DirEntry::File(path, ext.to_string()));
+            f(DirEntry::File(&path, ext));
         }
 
         unsafe { ndk_sys::AAssetDir_close(dir_ptr) };

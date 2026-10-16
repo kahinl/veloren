@@ -29,10 +29,10 @@ impl EventCallback {
         let j_data = env.new_string(data)?;
 
         env.call_method(
-            self.object.clone(),
+            JObject::from(self.object.clone()),
             self.method_id,
             "(Ljava/lang/String;Ljava/lang/String;)V",
-            &[j_type.into(), j_data.into()],
+            &[j_type.into_inner().into(), j_data.into_inner().into()],
         )?;
 
         Ok(())
