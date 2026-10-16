@@ -26,7 +26,8 @@ use veloren_common::comp::controller::{ControllerInputs, InputKind};
 use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
-/// The Veloren client instance, stored as jlong (raw pointer) in static storage.
+/// The Veloren client instance, stored as jlong (i64 raw pointer) in static storage.
+/// jlong is i64 which is always Send + Sync.
 static CLIENT: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
@@ -36,7 +37,7 @@ static RENDERER: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 
 /// The Android AAssetManager, stored as raw pointer.
 #[cfg(target_os = "android")]
-static ASSET_MANAGER: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
+static ASSET_MANAGER: OnceLock<Mutex<Option<*mut ndk_sys::AAssetManager>>> = OnceLock::new();
 
 /// The Android asset cache.
 #[cfg(target_os = "android")]
@@ -70,7 +71,7 @@ fn asset_cache_storage() -> &'static Mutex<Option<assets_manager::AssetCache>> {
 
 /// Initialize the Veloren client and connect to a server.
 /// Called from Java: `velorenInit(serverAddress: String)`
-/// Returns: jlong (raw pointer to Box<Client> as jlong)
+/// Returns: jlong (raw pointer to Box<Client> cast to jlong)
 #[no_mangle]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     mut env: JNIEnv,
@@ -207,7 +208,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
         return -1;
     };
 
-    let renderer = unsafe { &mut *(*renderer_ptr as *mut renderer::Renderer) };
+    let renderer = unsafe { &mut *(renderer_ptr as *mut renderer::Renderer) };
     match renderer.render() {
         Ok(()) => 0,
         Err(e) => {
