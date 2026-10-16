@@ -47,6 +47,9 @@ jobs:
         run: |
           CLANG_PATH=$(find / -name 'aarch64-linux-android34-clang' -type f 2>/dev/null | head -1)
           CLANGXX_PATH=$(find / -name 'aarch64-linux-android34-clang++' -type f 2>/dev/null | head -1)
+          if [ -z "$CLANGXX_PATH" ]; then
+            CLANGXX_PATH=$(find / -name 'aarch64-linux-android-clang++' -type f 2>/dev/null | head -1)
+          fi
           AR_PATH=$(find / -name 'llvm-ar' -type f 2>/dev/null | head -1)
           echo "CLANG_PATH=$CLANG_PATH" >> $GITHUB_ENV
           echo "CLANGXX_PATH=$CLANGXX_PATH" >> $GITHUB_ENV
