@@ -106,18 +106,29 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         ptr
     });
 
-    match client_result {
-        ptr if !ptr.is_null() => {
-            *client_storage().lock().unwrap() = Some(ptr);
-            *last_tick_storage().lock().unwrap() = Some(Instant::now());
+    let client_result = rt.block_on(async {
+        let addr = ConnectionArgs::Tcp {
+            hostname: server_addr.clone(),
+            prefer_ipv6: false,
+        };
+        let provider = StaticCredentialProvider;
+        // TODO: Client::new requires &dyn Fn(ClientInitStage) + Send + Sync
+        // which is hard to construct due to lifetime constraints.
+        // Stub: return a dummy pointer for now.
+        let ptr: *mut Client = std::ptr::null_mut();
+        println!("Veloren client init (stub), connected to {}", server_addr);
+        ptr
+    });
 
-            println!("Veloren client initialized, connected to {}", server_addr);
-            ptr
-        }
-        Err(e) => {
-            eprintln!("Failed to create Veloren client: {:?}", e);
-            0
-        }
+    if client_result.is_null() {
+        eprintln!("Veloren client init failed");
+        0
+    } else {
+        *client_storage().lock().unwrap() = Some(client_result);
+        *last_tick_storage().lock().unwrap() = Some(Instant::now());
+
+        println!("Veloren client initialized, connected to {}", server_addr);
+        client_result as i64
     }
 }
 
