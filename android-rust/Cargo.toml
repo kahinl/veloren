@@ -19,6 +19,9 @@ vek = { version = "0.17", features = ["serde", "mint"] }
 # wgpu renderer for Android
 wgpu = "22"
 
+# Android NDK asset access
+assets_manager = "0.13"
+
 [target.'cfg(target_os = "android")'.dependencies]
 ndk = "0.6"
 ndk-sys = "0.6"

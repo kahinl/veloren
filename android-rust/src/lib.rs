@@ -2,7 +2,7 @@ use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JObject, JString};
 use jni::sys::{jfloat, jint, jlong};
 use std::path::PathBuf;
-use std::ptr::NonNull;
+use std::ptr::null_mut;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -28,22 +28,22 @@ use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
 /// The Veloren client instance, stored as a raw pointer across JNI calls.
-static CLIENT: OnceLock<Mutex<Option<NonNull<Client>>>> = OnceLock::new();
+static CLIENT: OnceLock<Mutex<Option<*mut Client>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 static LAST_TICK: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 /// The wgpu renderer instance, stored as a raw pointer across JNI calls.
-static RENDERER: OnceLock<Mutex<Option<NonNull<renderer::Renderer>>>> = OnceLock::new();
+static RENDERER: OnceLock<Mutex<Option<*mut renderer::Renderer>>> = OnceLock::new();
 
 /// The Android AAssetManager, stored for asset loading.
 #[cfg(target_os = "android")]
-static ASSET_MANAGER: OnceLock<Mutex<Option<NonNull<ndk_sys::AAssetManager>>>> = OnceLock::new();
+static ASSET_MANAGER: OnceLock<Mutex<Option<*mut ndk_sys::AAssetManager>>> = OnceLock::new();
 
 /// The Android asset cache, initialized once the AAssetManager is set.
 #[cfg(target_os = "android")]
 static ASSET_CACHE: OnceLock<Mutex<Option<assets_manager::AssetCache>>> = OnceLock::new();
 
-fn client_storage() -> &'static Mutex<Option<NonNull<Client>>> {
+fn client_storage() -> &'static Mutex<Option<*mut Client>> {
     CLIENT.get_or_init(|| Mutex::new(None))
 }
 
@@ -51,23 +51,16 @@ fn runtime_storage() -> &'static Mutex<Option<Runtime>> {
     RUNTIME.get_or_init(|| Mutex::new(None))
 }
 
-/// The look delta (camera rotation) from touch input, stored for the renderer/client.
-static LOOK_DELTA: OnceLock<Mutex<Option<vek::Vec2<f32>>>> = OnceLock::new();
-
-fn look_delta_storage() -> &'static Mutex<Option<vek::Vec2<f32>>> {
-    LOOK_DELTA.get_or_init(|| Mutex::new(None))
-}
-
 fn last_tick_storage() -> &'static Mutex<Option<Instant>> {
     LAST_TICK.get_or_init(|| Mutex::new(None))
 }
 
-fn renderer_storage() -> &'static Mutex<Option<NonNull<renderer::Renderer>>> {
+fn renderer_storage() -> &'static Mutex<Option<*mut renderer::Renderer>> {
     RENDERER.get_or_init(|| Mutex::new(None))
 }
 
 #[cfg(target_os = "android")]
-fn asset_manager_storage() -> &'static Mutex<Option<NonNull<ndk_sys::AAssetManager>>> {
+fn asset_manager_storage() -> &'static Mutex<Option<*mut ndk_sys::AAssetManager>> {
     ASSET_MANAGER.get_or_init(|| Mutex::new(None))
 }
 
@@ -120,10 +113,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     match client_result {
         Ok(mut client) => {
             let boxed = Box::new(client);
-            let ptr = Box::into_raw(boxed);
-            let non_null = NonNull::new(ptr).expect("client pointer is null");
+            let ptr = Box::into_raw(boxed) as *mut Client;
 
-            client_storage().lock().unwrap().replace(non_null);
+            client_storage().lock().unwrap().replace(ptr);
             runtime_storage().lock().unwrap().replace(runtime);
             last_tick_storage().lock().unwrap().replace(Instant::now());
 
@@ -145,7 +137,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     _class: JClass,
     dt: jfloat,
 ) -> jint {
-    let client_ptr = client_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref());
+    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
     let Some(client_ptr) = client_ptr else {
         return -1;
     };
@@ -160,7 +152,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
 
     let inputs = ControllerInputs::default();
 
-    let client = unsafe { client_ptr.as_mut() };
+    let client = unsafe { &mut *client_ptr };
     match client.tick(inputs, elapsed) {
         Ok(events) => {
             // Forward events to Java callback if registered
@@ -195,10 +187,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
     };
 
     let boxed = Box::new(renderer);
-    let ptr = Box::into_raw(boxed);
-    let non_null = NonNull::new(ptr).expect("renderer pointer is null");
+    let ptr = Box::into_raw(boxed) as *mut renderer::Renderer;
 
-    renderer_storage().lock().unwrap().replace(non_null);
+    renderer_storage().lock().unwrap().replace(ptr);
     0
 }
 
@@ -213,12 +204,12 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
         .lock()
         .unwrap()
         .as_ref()
-        .and_then(|o| o.as_ref());
+        .copied();
     let Some(renderer_ptr) = renderer_ptr else {
         return -1;
     };
 
-    let renderer = unsafe { renderer_ptr.as_mut() };
+    let renderer = unsafe { &mut *renderer_ptr };
     match renderer.render() {
         Ok(()) => 0,
         Err(e) => {
@@ -241,12 +232,12 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
         .lock()
         .unwrap()
         .as_ref()
-        .and_then(|o| o.as_ref());
+        .copied();
     let Some(renderer_ptr) = renderer_ptr else {
         return;
     };
 
-    let renderer = unsafe { renderer_ptr.as_mut() };
+    let renderer = unsafe { &mut *renderer_ptr };
     renderer.resize(width as u32, height as u32);
 }
 
@@ -272,8 +263,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
         return -1;
     }
 
-    let non_null = NonNull::new(mgr_ptr).expect("AAssetManager pointer is null");
-    asset_manager_storage().lock().unwrap().replace(non_null);
+    asset_manager_storage().lock().unwrap().replace(mgr_ptr);
 
     // Create the asset cache with the Android source
     let android_source = match android_assets::AndroidAssets::from_raw(mgr_ptr) {
@@ -341,12 +331,12 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
 ) {
     if let Some(ptr) = renderer_storage().lock().unwrap().take() {
         unsafe {
-            let _ = Box::from_raw(ptr.as_ptr());
+            drop(Box::from_raw(ptr));
         }
     }
     if let Some(ptr) = client_storage().lock().unwrap().take() {
         unsafe {
-            let _ = Box::from_raw(ptr.as_ptr());
+            drop(Box::from_raw(ptr));
         }
     }
     runtime_storage().lock().unwrap().take();
@@ -371,7 +361,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     action: jint,
     pressed: jboolean,
 ) {
-    let client_ptr = client_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref());
+    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
     let Some(client_ptr) = client_ptr else {
         return;
     };
@@ -390,7 +380,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
         _ => InputKind::Primary,
     };
 
-    let client = unsafe { client_ptr.as_mut() };
+    let client = unsafe { &mut *client_ptr };
     client.handle_input(input_kind, pressed != 0, None, None);
 
     if let Some(controller) = client
@@ -410,9 +400,9 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    let client_ptr = client_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref());
+    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
     match client_ptr {
-        Some(ptr) => unsafe { ptr.as_ref().get_tick() as jint },
+        Some(ptr) => unsafe { (&*ptr).get_tick() as jint },
         None => -1,
     }
 }
@@ -426,7 +416,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
     _class: JClass,
     tier: jint,
 ) {
-    let client_ptr = client_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref());
+    let client_ptr = client_storage().lock().unwrap().as_ref().copied();
     let Some(client_ptr) = client_ptr else {
         return;
     };
@@ -437,7 +427,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
         _ => veloren_client::MobilePerfTier::None,
     };
 
-    let client = unsafe { client_ptr.as_mut() };
+    let client = unsafe { &mut *client_ptr };
     client.set_mobile_perf_tier(perf_tier);
 }
 
@@ -449,11 +439,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetWeatherEna
     _class: JClass,
     enabled: jboolean,
 ) {
-    // This will be wired to voxygen settings when the Android settings
-    // menu is connected to the renderer settings. Stored as a static
-    // flag for now.
-    static WEATHER_ENABLED: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(false));
+    static WEATHER_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     *WEATHER_ENABLED.lock().unwrap() = enabled != 0;
 }
 
@@ -463,8 +449,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetWeatherEna
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    static WEATHER_ENABLED: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(false));
+    static WEATHER_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     if *WEATHER_ENABLED.lock().unwrap() { 1 } else { 0 }
 }
 
@@ -476,8 +461,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCloudsEnab
     _class: JClass,
     enabled: jboolean,
 ) {
-    static CLOUDS_ENABLED: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(false));
+    static CLOUDS_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     *CLOUDS_ENABLED.lock().unwrap() = enabled != 0;
 }
 
@@ -487,8 +471,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetCloudsEnab
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    static CLOUDS_ENABLED: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(false));
+    static CLOUDS_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     if *CLOUDS_ENABLED.lock().unwrap() { 1 } else { 0 }
 }
 
@@ -500,8 +483,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetParticlesE
     _class: JClass,
     enabled: jboolean,
 ) {
-    static PARTICLES_ENABLED: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(false));
+    static PARTICLES_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     *PARTICLES_ENABLED.lock().unwrap() = enabled != 0;
 }
 
@@ -511,8 +493,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetParticlesE
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    static PARTICLES_ENABLED: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(false));
+    static PARTICLES_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     if *PARTICLES_ENABLED.lock().unwrap() { 1 } else { 0 }
 }
 
@@ -539,8 +520,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetThreadCoun
 ) {
     // Rayon thread pool is typically set at startup. This stores the
     // preference for use when the client initializes its thread pool.
-    static THREAD_COUNT: once_cell::sync::Lazy<std::sync::Mutex<usize>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(0));
+    static THREAD_COUNT: OnceLock<Mutex<usize>> = OnceLock::new();
     *THREAD_COUNT.lock().unwrap() = count.max(1) as usize;
     println!("Rayon thread count set to {}", count);
 }
@@ -551,8 +531,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetThreadCoun
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    static THREAD_COUNT: once_cell::sync::Lazy<std::sync::Mutex<usize>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(0));
+    static THREAD_COUNT: OnceLock<Mutex<usize>> = OnceLock::new();
     *THREAD_COUNT.lock().unwrap() as jint
 }
 
@@ -564,8 +543,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetOnDemandAs
     _class: JClass,
     enabled: jboolean,
 ) {
-    static ON_DEMAND_ASSETS: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(true));
+    static ON_DEMAND_ASSETS: OnceLock<Mutex<bool>> = OnceLock::new();
     *ON_DEMAND_ASSETS.lock().unwrap() = enabled != 0;
 }
 
@@ -575,8 +553,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetOnDemandAs
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    static ON_DEMAND_ASSETS: once_cell::sync::Lazy<std::sync::Mutex<bool>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(true));
+    static ON_DEMAND_ASSETS: OnceLock<Mutex<bool>> = OnceLock::new();
     if *ON_DEMAND_ASSETS.lock().unwrap() { 1 } else { 0 }
 }
 
@@ -589,8 +566,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetTextureCom
     _class: JClass,
     format: jint,
 ) {
-    static TEXTURE_COMPRESSION: once_cell::sync::Lazy<std::sync::Mutex<i32>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(1)); // Default to ASTC
+    static TEXTURE_COMPRESSION: OnceLock<Mutex<i32>> = OnceLock::new();
     *TEXTURE_COMPRESSION.lock().unwrap() = format;
 }
 
@@ -600,8 +576,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTextureCom
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    static TEXTURE_COMPRESSION: once_cell::sync::Lazy<std::sync::Mutex<i32>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(1));
+    static TEXTURE_COMPRESSION: OnceLock<Mutex<i32>> = OnceLock::new();
     *TEXTURE_COMPRESSION.lock().unwrap()
 }
 
@@ -613,8 +588,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMaxFps(
     _class: JClass,
     fps: jint,
 ) {
-    static MAX_FPS: once_cell::sync::Lazy<std::sync::Mutex<u32>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(30));
+    static MAX_FPS: OnceLock<Mutex<u32>> = OnceLock::new();
     *MAX_FPS.lock().unwrap() = fps.max(15).min(120);
 }
 
@@ -624,8 +598,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetMaxFps(
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
-    static MAX_FPS: once_cell::sync::Lazy<std::sync::Mutex<u32>> =
-        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(30));
+    static MAX_FPS: OnceLock<Mutex<u32>> = OnceLock::new();
     *MAX_FPS.lock().unwrap() as jint
 }
 
@@ -643,4 +616,11 @@ impl CredentialProvider for StaticCredentialProvider {
     ) -> impl std::future::Future<Output = Result<Credentials, ()>> + Send {
         async { Ok(Credentials::Username("android".to_string())) }
     }
+}
+
+/// The look delta (camera rotation) from touch input, stored for the renderer/client.
+static LOOK_DELTA: OnceLock<Mutex<Option<vek::Vec2<f32>>>> = OnceLock::new();
+
+fn look_delta_storage() -> &'static Mutex<Option<vek::Vec2<f32>>> {
+    LOOK_DELTA.get_or_init(|| Mutex::new(None))
 }

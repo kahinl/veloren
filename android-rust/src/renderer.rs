@@ -1,6 +1,5 @@
 use jni::JNIEnv;
 use jni::objects::JObject;
-use std::ptr::NonNull;
 use wgpu::{
     Backends, Instance, InstanceDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration,
     SurfaceTarget,
@@ -15,7 +14,7 @@ pub struct Renderer {
     pub surface: Surface<'static>,
     pub config: SurfaceConfiguration,
     /// Keep the ANativeWindow alive for the lifetime of the surface.
-    _window: NonNull<ndk_sys::ANativeWindow>,
+    _window: *mut ndk_sys::ANativeWindow,
 }
 
 impl Renderer {
@@ -27,9 +26,9 @@ impl Renderer {
                 surface.into_raw() as *mut _,
             )
         };
-        let window = std::ptr::NonNull::new(window)
-            .ok_or_else(|| "Failed to get ANativeWindow from Java Surface".to_string())?;
-        let window_ptr = window.as_ptr();
+        if window.is_null() {
+            return Err("Failed to get ANativeWindow from Java Surface".to_string());
+        }
 
         let instance = Instance::new(InstanceDescriptor {
             backends: Backends::VULKAN.primary(),
@@ -37,7 +36,7 @@ impl Renderer {
         });
 
         let surface = unsafe {
-            instance.create_surface(SurfaceTarget::AndroidNdk(window_ptr as *mut _))
+            instance.create_surface(SurfaceTarget::AndroidNdk(window as *mut _))
                 .map_err(|e| format!("Failed to create wgpu surface: {e}"))?
         };
 
@@ -117,5 +116,15 @@ impl Renderer {
         frame.present();
 
         Ok(())
+    }
+}
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        if !self._window.is_null() {
+            unsafe {
+                ndk_sys::ANativeWindow_release(self._window);
+            }
+        }
     }
 }
