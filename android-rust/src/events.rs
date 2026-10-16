@@ -110,14 +110,14 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
         .unwrap_or_default();
 
     // Forward to the client input handler based on event type
-    let client_ptr = crate::client_storage().lock().unwrap().as_ref().and_then(|o| o.as_ref());
+    let client_ptr = crate::client_storage().lock().unwrap().as_ref().copied();
     let Some(client_ptr) = client_ptr else {
         return -1;
     };
 
     match etype.as_str() {
         "chat" => {
-            let client = unsafe { &mut *(*client_ptr as *mut Client) };
+            let client = unsafe { &mut *(client_ptr as *mut Client) };
             client.send_chat(edata);
             0
         }
@@ -125,7 +125,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSendEvent(
             let parts: Vec<&str> = edata.split_whitespace().collect();
             if let Some(name) = parts.first() {
                 let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
-                let client = unsafe { &mut *(*client_ptr as *mut Client) };
+                let client = unsafe { &mut *(client_ptr as *mut Client) };
                 client.send_command(name.to_string(), args);
             }
             0

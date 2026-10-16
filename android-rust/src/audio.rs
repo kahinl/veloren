@@ -1,7 +1,7 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass};
 use jni::sys::jint;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 /// OpenSL ES audio backend for Android.
 /// Stub implementation — OpenSL ES symbols are not available in ndk-sys 0.6.
@@ -49,11 +49,10 @@ impl Drop for Audio {
 }
 
 /// Global audio instance, stored as a raw pointer across JNI calls.
-static AUDIO: once_cell::sync::Lazy<Mutex<Option<*mut Audio>>> =
-    once_cell::sync::Lazy::new(|| Mutex::new(None));
+static AUDIO: OnceLock<Mutex<Option<*mut Audio>>> = OnceLock::new();
 
 fn audio_storage() -> &'static Mutex<Option<*mut Audio>> {
-    &AUDIO
+    AUDIO.get_or_init(|| Mutex::new(None))
 }
 
 /// JNI: `velorenAudioInit()`

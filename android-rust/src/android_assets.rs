@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::ptr::NonNull;
 
 use assets_manager::{
-    source::{DirEntry, Source},
-    BoxedError, FileContent,
+    source::{DirEntry, FileContent, Source},
+    BoxedError,
 };
 
 /// Android asset source that reads from the APK's `src/main/assets/` directory

@@ -78,7 +78,7 @@ impl AudioSource for SineSource {
 
 impl AudioMixer {
     pub fn new(sample_rate: u32) -> Self {
-        let mut sources: Vec<Box<dyn AudioSource>> = Vec::new();
+        let mut sources: Vec<Box<dyn AudioSource + Send>> = Vec::new();
         sources.push(Box::new(SilenceSource));
         sources.push(Box::new(SineSource::new(440.0, 0.1))); // A4 test tone
 
@@ -144,7 +144,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
 ) -> JByteArray<'a> {
     let mixer = audio_mixer_storage().lock().unwrap().as_mut();
     let Some(mixer) = mixer else {
-        return env.byte_array_from_slice(&[]).unwrap_or_else(|_| JByteArray::from_raw(std::ptr::null_mut()));
+        return env.byte_array_from_slice(&[]).unwrap_or_default();
     };
 
     let pcm16 = mixer.generate_pcm16_stereo(num_frames as usize);
@@ -153,7 +153,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenAudioMixerGen
         .flat_map(|s| s.to_le_bytes())
         .collect();
 
-    env.byte_array_from_slice(&bytes).unwrap_or_else(|_| JByteArray::from_raw(std::ptr::null_mut()))
+    env.byte_array_from_slice(&bytes).unwrap_or_default()
 }
 
 /// JNI: `velorenAudioMixerSetMasterVolume(volume: float)`
