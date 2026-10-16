@@ -26,7 +26,7 @@ use veloren_common::comp::controller::{ControllerInputs, InputKind};
 use veloren_common::comp::Controller;
 use tokio::runtime::Runtime;
 
-/// The Veloren client instance, stored as jlong (i64 = raw pointer) in static storage.
+/// The Veloren client instance, stored as jlong (i64 raw pointer) in static storage.
 /// jlong is i64 which is always Send + Sync.
 static CLIENT: OnceLock<Mutex<Option<jlong>>> = OnceLock::new();
 static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
