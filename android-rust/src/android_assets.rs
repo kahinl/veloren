@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 
 use assets_manager::{
     source::{DirEntry, Source},
-    BoxedError, FileContent,
+    BoxedError,
 };
 
 pub struct AndroidAssets {
