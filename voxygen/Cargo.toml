@@ -155,8 +155,8 @@ winres = "0.1"
 [target.'cfg(target_family = "windows")'.dependencies]
 mimalloc = { workspace = true }
 
-# Mumble
-[target.'cfg(not(target_os="macos"))'.dependencies]
+# Mumble: mumble-link uses shm_open, which Android's libc does not provide
+[target.'cfg(not(any(target_os="macos", target_os="android")))'.dependencies]
 mumble-link = "0.2.0"
 
 # native-dialog has no Android backend and fails to compile for that target

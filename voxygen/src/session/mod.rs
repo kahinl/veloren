@@ -5,7 +5,7 @@ mod target;
 use std::{cell::RefCell, collections::HashSet, rc::Rc, result::Result, time::Duration};
 
 use itertools::Itertools;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "android")))]
 use mumble_link::SharedLink;
 use ordered_float::OrderedFloat;
 use specs::WorldExt;
@@ -118,7 +118,7 @@ pub struct SessionState {
     pub(crate) selected_entity: Option<(specs::Entity, std::time::Instant)>,
     pub(crate) viewpoint_entity: Option<specs::Entity>,
     interactables: interactable::Interactables,
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
     mumble_link: SharedLink,
     hitboxes: HashMap<specs::Entity, DebugShapeId>,
     lines: PlayerDebugLines,
@@ -149,7 +149,7 @@ impl SessionState {
         client
             .borrow_mut()
             .set_lod_distance(global_state.settings.graphics.lod_distance);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "android")))]
         let mut mumble_link = SharedLink::new("veloren", "veloren-voxygen");
         {
             let mut client = client.borrow_mut();
@@ -157,7 +157,7 @@ impl SessionState {
             client.request_lossy_terrain_compression(
                 global_state.settings.networking.lossy_terrain_compression,
             );
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "android")))]
             if let Some(uid) = client.uid() {
                 let identiy = if let Some(info) = client.player_list().get(&uid) {
                     format!("{}-{}", info.player_alias, uid)
@@ -193,7 +193,7 @@ impl SessionState {
             selected_entity: None,
             viewpoint_entity: None,
             interactables: Default::default(),
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "android")))]
             mumble_link,
             hitboxes: HashMap::new(),
             metadata,
@@ -264,7 +264,7 @@ impl SessionState {
         self.scene.maintain_debug_vectors(&client, &mut self.lines);
         let pos = client.position().unwrap_or_default();
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "android")))]
         {
             // Update mumble positional audio
             let ori = client
