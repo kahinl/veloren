@@ -72,7 +72,8 @@ pub fn set_panic_hook(log_filename: String, logs_dir: PathBuf) {
             backtrace::Backtrace::new(),
         );
 
-        #[cfg(feature = "native-dialog")]
+        // native-dialog does not support Android
+        #[cfg(all(feature = "native-dialog", not(target_os = "android")))]
         {
             use native_dialog::{DialogBuilder, MessageLevel};
 
