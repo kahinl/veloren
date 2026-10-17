@@ -276,19 +276,17 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
     asset_manager: JObject,
 ) -> i32 {
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        let env = match env.get_env() {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("Failed to get JNIEnv: {:?}", e);
-                return -1i32;
-            }
-        };
+        let vm = env.get_java_vm().map_err(|e| {
+            eprintln!("Failed to get JavaVM: {:?}", e);
+            -1i32
+        })?;
+        let env_ptr: *mut ndk_sys::JNIEnv = vm.get_env().map_err(|e| {
+            eprintln!("Failed to get JNIEnv pointer: {:?}", e);
+            -1i32
+        })?;
 
-        let mgr_ptr: *mut std::ffi::c_void = unsafe {
-            AAssetManager_fromJava(
-                env.as_mut_ptr() as *mut std::ffi::c_void,
-                asset_manager.into() as *mut std::ffi::c_void,
-            ) as *mut std::ffi::c_void
+        let mgr_ptr: *mut ndk_sys::AAssetManager = unsafe {
+            AAssetManager_fromJava(env_ptr, asset_manager.into_raw())
         };
 
         if mgr_ptr.is_null() {

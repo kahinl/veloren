@@ -16,7 +16,7 @@ vek = { version = "0.17", features = ["serde", "mint"] }
 
 # wgpu renderer for Android
 wgpu = "22"
-raw-window-handle = "0.6"
+raw-window-handle = { version = "0.6", features = ["android"] }
 pollster = "0.3"
 
 # Android NDK asset access

@@ -1,7 +1,7 @@
 use jni::JNIEnv;
 use jni::objects::JObject;
 use ndk_sys::ANativeWindow_fromSurface;
-use raw_window_handle::{AndroidWindowHandle, HasRawWindowHandle};
+use raw_window_handle::{AndroidNdkWindowHandle, HasWindowHandle};
 use wgpu::util::DeviceExt;
 
 // Field order matters: Rust drops fields in declaration order.
@@ -22,21 +22,24 @@ pub struct Renderer {
 impl Renderer {
     pub fn new(env: &JNIEnv, surface_obj: JObject, width: u32, height: u32) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN | wgpu::Backends::OPENGL,
+            backends: wgpu::Backends::VULKAN,
             ..Default::default()
         });
 
+        // Get raw JNIEnv pointer from JavaVM (jni 0.21 doesn't expose as_mut_ptr on JNIEnv)
+        let vm = env.get_java_vm().map_err(|e| format!("Failed to get JavaVM: {:?}", e))?;
+        let env_ptr: *mut std::ffi::c_void = vm.get_env().map_err(|e| format!("Failed to get JNIEnv pointer: {:?}", e))? as *mut std::ffi::c_void;
+
         // Extract ANativeWindow from Java Surface via JNI
-        let env_ptr = env.as_mut_ptr();
         let native_window = unsafe {
-            ANativeWindow_fromSurface(env_ptr, surface_obj.into())
+            ANativeWindow_fromSurface(env_ptr as *mut ndk_sys::JNIEnv, surface_obj.into_raw() as ndk_sys::jobject)
         };
 
         if native_window.is_null() {
             return Err("Failed to create ANativeWindow from Surface".to_string());
         }
 
-        let raw_window_handle = AndroidWindowHandle::new(native_window as *mut std::ffi::c_void);
+        let raw_window_handle = AndroidNdkWindowHandle::new(native_window as *mut std::ffi::c_void);
 
         let surface = unsafe {
             instance.create_surface(raw_window_handle)
@@ -54,22 +57,16 @@ impl Renderer {
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
                 label: None,
+                memory_hints: wgpu::MemoryHints::default(),
             },
             None,
         )).map_err(|e| format!("Failed to create wgpu device: {:?}", e))?;
-
-        let size = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps.formats.iter()
             .copied()
             .find(|f| f.is_srgb())
-            .or(surface_caps.formats.first())
-            .copied()
+            .or_else(|| surface_caps.formats.first().copied())
             .ok_or_else(|| "No suitable surface format".to_string())?;
 
         let config = wgpu::SurfaceConfiguration {
@@ -80,6 +77,7 @@ impl Renderer {
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: wgpu::FrameLatencyMode::default(),
         };
 
         surface.configure(&device, &config);
@@ -93,7 +91,7 @@ impl Renderer {
             config,
             width,
             height,
-            _native_window: native_window,
+            _native_window: native_window as *mut std::ffi::c_void,
         })
     }
 
