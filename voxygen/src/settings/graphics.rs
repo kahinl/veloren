@@ -1,5 +1,5 @@
 use crate::{
-    render::RenderMode,
+    render::{CloudMode, RenderMode},
     window::{FullScreenSettings, WindowSettings},
 };
 use common::ViewDistances;
@@ -263,7 +263,7 @@ impl GraphicsSettings {
     /// Returns the weather, clouds, and particles toggle states.
     /// These are the main expensive visual effects that can be
     /// individually enabled/disabled in the Android settings menu.
-    pub fn weather_enabled(&self) -> bool { self.rain_enabled }
+    pub fn weather_enabled(&self) -> bool { self.render_mode.rain_enabled }
 
     pub fn clouds_enabled(&self) -> bool {
         matches!(self.render_mode.cloud, CloudMode::Flat | CloudMode::Minimal | CloudMode::Low)
@@ -273,7 +273,7 @@ impl GraphicsSettings {
 
     /// Toggle weather on/off.
     pub fn set_weather_enabled(&mut self, enabled: bool) {
-        self.rain_enabled = enabled;
+        self.render_mode.rain_enabled = enabled;
     }
 
     /// Toggle clouds on/off.
