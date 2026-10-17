@@ -287,12 +287,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         cachedSurface = null
         surfaceWidth = 0
         surfaceHeight = 0
+        stopGameLoop()
+        // The window behind the wgpu surface is gone. Drop the renderer so no
+        // frame touches the dead surface, and so a fresh renderer is created
+        // when Android hands us a new surface on return; reusing the old one
+        // aborts inside wgpu.
+        if (isRendererCreated) {
+            isRendererCreated = false
+            velorenDropRenderer()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        gameLoopThread?.running = false
-        gameLoopThread = null
+        stopGameLoop()
         velorenAudioMute()
     }
 
@@ -306,14 +314,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         if (hasFocus) {
             startGameLoopIfReady()
         } else {
-            gameLoopThread?.running = false
-            gameLoopThread = null
+            stopGameLoop()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        gameLoopThread?.running = false
+        stopGameLoop()
         velorenAudioMixerShutdown()
         velorenAudioShutdown()
         velorenShutdown()
@@ -410,6 +417,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    /** Stop the game loop thread and wait briefly for the frame in flight. */
+    private fun stopGameLoop() {
+        val thread = gameLoopThread ?: return
+        thread.running = false
+        gameLoopThread = null
+        // The native renderer must not be dropped while a frame may still be
+        // using it; normally the loop exits within one frame.
+        runCatching { thread.join(1000) }
+    }
+
     /** JNI declarations */
     external fun velorenInit(serverAddress: String): Long
     external fun velorenLastInitError(): String?
@@ -437,6 +454,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     external fun velorenSetMaxFps(fps: Int)
     external fun velorenGetMaxFps(): Int
     external fun velorenCreateRenderer(surface: Surface, width: Int, height: Int): Long
+    external fun velorenDropRenderer()
     external fun velorenRenderFrame(): Int
     external fun velorenLoadAsset(path: String): ByteArray
     external fun velorenResize(width: Int, height: Int)
@@ -483,13 +501,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
                     // 1) Update game state
                     if (velorenTick(dt) < 0) {
-                        stopWithError("tick")
+                        // Stopping for a pause is normal; only report real errors.
+                        if (running) stopWithError("tick")
                         return
                     }
 
                     // 2) Render frame
                     if (isRendererCreated && velorenRenderFrame() < 0) {
-                        stopWithError("render")
+                        if (running) stopWithError("render")
                         return
                     }
 

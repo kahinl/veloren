@@ -6,9 +6,23 @@ use raw_window_handle::{
 };
 use wgpu::util::DeviceExt;
 
+/// The `ANativeWindow` reference acquired by `ANativeWindow_fromSurface`.
+/// Releasing it on drop keeps the reference count balanced; the field order
+/// of `Renderer` makes this happen only after the wgpu surface is gone.
+struct NativeWindowRef(*mut std::ffi::c_void);
+
+impl Drop for NativeWindowRef {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { ndk_sys::ANativeWindow_release(self.0.cast()) };
+        }
+    }
+}
+
 // Field order matters: Rust drops fields in declaration order.
 // surface must be dropped BEFORE device/queue/instance, so it is declared first.
-// instance is declared last so it drops last.
+// instance is declared next-to-last, and the native window reference (declared
+// last) is released only once the surface using it has been dropped.
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     queue: wgpu::Queue,
@@ -18,7 +32,7 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     width: u32,
     height: u32,
-    _native_window: *mut std::ffi::c_void,
+    _native_window: NativeWindowRef,
 }
 
 impl Renderer {
@@ -32,6 +46,8 @@ impl Renderer {
         let native_window = unsafe {
             ANativeWindow_fromSurface(env.get_raw(), surface_obj.into_raw())
         };
+        // Wrapped immediately: every early return below releases the reference.
+        let native_window_ref = NativeWindowRef(native_window);
 
         let native_window_ptr = std::ptr::NonNull::new(native_window as *mut std::ffi::c_void)
             .ok_or_else(|| "Failed to create ANativeWindow from Surface".to_string())?;
@@ -93,7 +109,7 @@ impl Renderer {
             config,
             width,
             height,
-            _native_window: native_window as *mut std::ffi::c_void,
+            _native_window: native_window_ref,
         })
     }
 
@@ -101,10 +117,23 @@ impl Renderer {
         if width == 0 || height == 0 {
             return;
         }
+        // A window that was destroyed reports no supported present modes and
+        // configuring such a surface panics inside wgpu; skip until a fresh
+        // renderer is created for the new window instead.
+        let Some(present_mode) = self
+            .surface
+            .get_capabilities(&self.adapter)
+            .present_modes
+            .first()
+            .copied()
+        else {
+            return;
+        };
         self.width = width;
         self.height = height;
         self.config.width = width;
         self.config.height = height;
+        self.config.present_mode = present_mode;
         self.surface.configure(&self.device, &self.config);
     }
 
@@ -149,6 +178,6 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        // Fields drop in declaration order: surface first, instance last
+        // Fields drop in declaration order: surface first, native window last
     }
 }

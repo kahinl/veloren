@@ -421,6 +421,10 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     *last_tick = Some(now);
     drop(last_tick);
 
+    // A stretch in the background can leave a minutes-wide gap between ticks;
+    // cap it like a slow frame instead of feeding one huge step to the client.
+    let elapsed = elapsed.min(std::time::Duration::from_secs(1));
+
     let inputs = ControllerInputs::default();
 
     let client = unsafe { &mut *(client_ptr as *mut Client) };
@@ -461,6 +465,10 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
             }
         };
 
+        // Defensive: release any renderer still stored (a missed drop) instead
+        // of leaking it when the pointer is replaced.
+        drop_renderer();
+
         let boxed = Box::new(renderer);
         let ptr = Box::into_raw(boxed) as *mut renderer::Renderer as i64;
         *renderer_storage().lock().unwrap() = Some(ptr);
@@ -485,12 +493,14 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    let renderer_ptr = renderer_storage().lock().unwrap().as_ref().copied();
-    let Some(renderer_ptr) = renderer_ptr else {
+    // Hold the storage lock for the whole frame: a concurrent drop (surface
+    // destroyed) must not tear the surface down while it is in use.
+    let mut renderer_guard = renderer_storage().lock().unwrap();
+    let Some(renderer_ptr) = renderer_guard.as_mut() else {
         return -1;
     };
 
-    let renderer = unsafe { &mut *(renderer_ptr as *mut renderer::Renderer) };
+    let renderer = unsafe { &mut *(*renderer_ptr as *mut renderer::Renderer) };
     match renderer.render() {
         Ok(()) => {
             record_frame_progress();
@@ -526,6 +536,34 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
 
     if result.is_err() {
         eprintln!("Renderer resize panicked, caught to prevent crash");
+    }
+}
+
+/// Drop the renderer together with its wgpu surface. The Android window behind
+/// the surface is destroyed when the app is backgrounded, so the surface can
+/// never be reused — configuring it again aborts inside wgpu. A fresh renderer
+/// is created when a new surface arrives, and until then frames are skipped.
+fn drop_renderer() {
+    let mut guard = renderer_storage().lock().unwrap();
+    if let Some(renderer_ptr) = guard.take() {
+        unsafe {
+            drop(Box::from_raw(renderer_ptr as *mut renderer::Renderer));
+        }
+        diag_log("renderer dropped");
+    }
+}
+
+/// Drop the renderer so a fresh one can be created for the next Surface.
+/// Called from Java: `velorenDropRenderer()`
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenDropRenderer(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(drop_renderer));
+
+    if result.is_err() {
+        eprintln!("Renderer drop panicked, caught to prevent crash");
     }
 }
 
@@ -628,12 +666,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
         }
     }
     *client_storage().lock().unwrap() = None;
-    if let Some(renderer_ptr) = renderer_storage().lock().unwrap().take() {
-        unsafe {
-            drop(Box::from_raw(renderer_ptr as *mut renderer::Renderer));
-        }
-    }
-    *renderer_storage().lock().unwrap() = None;
+    drop_renderer();
     *runtime_storage().lock().unwrap() = None;
     *last_tick_storage().lock().unwrap() = None;
 
