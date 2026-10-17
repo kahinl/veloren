@@ -140,7 +140,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     mut env: JNIEnv,
     _class: JClass,
-    client_ptr: i64,
     dt: f32,
 ) -> i32 {
     let client_ptr = client_storage().lock().unwrap().as_ref().copied();
@@ -205,7 +204,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     _env: JNIEnv,
     _class: JClass,
-    client_ptr: i64,
 ) -> i32 {
     let renderer_ptr = renderer_storage().lock().unwrap().as_ref().copied();
     let Some(renderer_ptr) = renderer_ptr else {
@@ -228,7 +226,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
     _env: JNIEnv,
     _class: JClass,
-    client_ptr: i64,
     width: i32,
     height: i32,
 ) {
@@ -325,11 +322,10 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
     _env: JNIEnv,
     _class: JClass,
-    client_ptr: i64,
 ) {
-    if client_ptr != 0 {
+    if let Some(ptr) = client_storage().lock().unwrap().take() {
         unsafe {
-            drop(Box::from_raw(client_ptr as *mut Client));
+            drop(Box::from_raw(ptr as *mut Client));
         }
     }
     *client_storage().lock().unwrap() = None;
@@ -354,7 +350,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     _env: JNIEnv,
     _class: JClass,
-    _client_ptr: i64,
     move_x: f32,
     move_y: f32,
     move_z: f32,
@@ -399,7 +394,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
     _env: JNIEnv,
     _class: JClass,
-    _client_ptr: i64,
 ) -> i32 {
     let client_guard = client_storage().lock().unwrap();
     match client_guard.as_ref() {
@@ -418,7 +412,6 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerfTier(
     _env: JNIEnv,
     _class: JClass,
-    _client_ptr: i64,
     tier: i32,
 ) {
     let mut client_guard = client_storage().lock().unwrap();

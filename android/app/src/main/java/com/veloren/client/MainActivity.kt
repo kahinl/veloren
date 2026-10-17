@@ -260,7 +260,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     /** JNI declarations */
-    external fun velorenInit(serverAddress: String): Int
+    external fun velorenInit(serverAddress: String): Long
     external fun velorenTick(dt: Float): Int
     external fun velorenSetAssetManager(assetManager: android.content.res.AssetManager): Int
     external fun velorenSetEventCallback(callbackObject: Any): Int
@@ -280,7 +280,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     external fun velorenGetTextureCompression(): Int
     external fun velorenSetMaxFps(fps: Int)
     external fun velorenGetMaxFps(): Int
-    external fun velorenCreateRenderer(surface: Surface, width: Int, height: Int): Int
+    external fun velorenCreateRenderer(surface: Surface, width: Int, height: Int): Long
     external fun velorenRenderFrame(): Int
     external fun velorenLoadAsset(path: String): ByteArray
     external fun velorenResize(width: Int, height: Int): Int
