@@ -66,6 +66,13 @@ fn last_init_error_storage() -> &'static Mutex<Option<String>> {
     LAST_INIT_ERROR.get_or_init(|| Mutex::new(None))
 }
 
+/// Account credentials entered in the UI (username, password).
+static CREDENTIALS: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
+
+fn credentials_storage() -> &'static Mutex<Option<(String, String)>> {
+    CREDENTIALS.get_or_init(|| Mutex::new(None))
+}
+
 #[cfg(target_os = "android")]
 fn asset_manager_storage() -> &'static Mutex<Option<i64>> {
     ASSET_MANAGER.get_or_init(|| Mutex::new(None))
@@ -172,6 +179,32 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLastInitError
     env.new_string(msg)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
+}
+
+/// Set the account credentials used for server auth.
+/// Called from Java: `velorenSetCredentials(username, password)`.
+/// An empty username clears them (falls back to the auth-less "android" name).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCredentials(
+    mut env: JNIEnv,
+    _class: JClass,
+    username: JString,
+    password: JString,
+) {
+    let user = env
+        .get_string(&username)
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let pass = env
+        .get_string(&password)
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let user = user.trim().to_string();
+    *credentials_storage().lock().unwrap() = if user.is_empty() {
+        None
+    } else {
+        Some((user, pass))
+    };
 }
 
 /// Run one tick of the Veloren client.
@@ -723,7 +756,16 @@ impl CredentialProvider for StaticCredentialProvider {
         &self,
         _auth_provider: &Option<String>,
     ) -> impl std::future::Future<Output = Result<Credentials, ()>> + Send {
-        async { Ok(Credentials::Username("android".to_string())) }
+        let creds = credentials_storage().lock().unwrap().clone();
+        async move {
+            Ok(match creds {
+                Some((user, pass)) if !user.is_empty() && !pass.is_empty() => {
+                    Credentials::UsernamePassword(user, pass)
+                },
+                Some((user, _)) if !user.is_empty() => Credentials::Username(user),
+                _ => Credentials::Username("android".to_string()),
+            })
+        }
     }
 }
 

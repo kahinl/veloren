@@ -4,12 +4,14 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.os.Bundle
+import android.text.InputType
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 
 class MainActivity : Activity(), SurfaceHolder.Callback {
@@ -31,12 +33,19 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var surfaceWidth: Int = 0
     private var surfaceHeight: Int = 0
 
+    // Account credentials for the server login (empty -> auth-less "android" fallback)
+    private var loginUsername: String = ""
+    private var loginPassword: String = ""
+
     // Audio mixer state
     private val AUDIO_SAMPLE_RATE = 44100
     private val AUDIO_FRAMES_PER_BUFFER = 1024 // ~23ms at 44.1kHz
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        loginUsername = getSharedPreferences("veloren", Context.MODE_PRIVATE)
+            .getString("username", "") ?: ""
 
         // Build layout programmatically: SurfaceView + TouchControls overlay + Menu overlay
         val root = FrameLayout(this)
@@ -76,39 +85,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         menuView = MenuView(this)
         menuView.onMenuAction = object : MenuView.OnMenuAction {
             override fun onPlayClicked() {
-                menuView.hide()
-                statusText.text = "Veloren: connecting to $serverAddress..."
-                // The server handshake blocks until it succeeds or times out,
-                // so it must not run on the UI thread.
-                Thread {
-                    val clientPtr = velorenInit(serverAddress)
-                    runOnUiThread {
-                        if (clientPtr != 0L) {
-                            isInitialized = true
-                            statusText.text = "Veloren: connected"
-                            val surface = cachedSurface
-                            if (surface != null && !isRendererCreated) {
-                                val result =
-                                    velorenCreateRenderer(surface, surfaceWidth, surfaceHeight)
-                                if (result != 0L) {
-                                    isRendererCreated = true
-                                    statusText.text =
-                                        "Veloren: renderer created ($surfaceWidth x $surfaceHeight)"
-                                } else {
-                                    statusText.text = "Veloren: renderer create failed"
-                                }
-                            }
-                            startGameLoopIfReady()
-                        } else {
-                            val err = runCatching { velorenLastInitError() }
-                                .getOrNull().orEmpty().take(160)
-                            statusText.text = if (err.isNotEmpty())
-                                "Veloren: connection failed ($err)"
-                            else
-                                "Veloren: connection failed"
-                        }
-                    }
-                }.start()
+                if (loginUsername.isEmpty()) {
+                    showLoginDialog()
+                } else {
+                    startConnect()
+                }
             }
 
             override fun onSettingsClicked() {
@@ -286,6 +267,79 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         velorenShutdown()
     }
 
+    /** Ask for the account credentials required by the official server. */
+    private fun showLoginDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 16, 48, 8)
+        }
+        val userEdit = EditText(this).apply {
+            hint = "Kullanıcı adı"
+            setText(loginUsername)
+        }
+        val passEdit = EditText(this).apply {
+            hint = "Şifre"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        layout.addView(userEdit)
+        layout.addView(passEdit)
+
+        AlertDialog.Builder(this)
+            .setTitle("Veloren hesabı")
+            .setMessage(
+                "Resmi sunucu hesap girişi ister. veloren.net'te ücretsiz hesap açabilirsin. " +
+                    "Boş bırakırsan 'android' adıyla hesapsız sunuculara bağlanılır."
+            )
+            .setView(layout)
+            .setPositiveButton("Bağlan") { _, _ ->
+                loginUsername = userEdit.text.toString().trim()
+                loginPassword = passEdit.text.toString()
+                getSharedPreferences("veloren", Context.MODE_PRIVATE).edit()
+                    .putString("username", loginUsername).apply()
+                velorenSetCredentials(loginUsername, loginPassword)
+                startConnect()
+            }
+            .setNegativeButton("İptal", null)
+            .show()
+    }
+
+    /** Connect to the server and create the renderer. */
+    private fun startConnect() {
+        menuView.hide()
+        statusText.text = "Veloren: connecting to $serverAddress..."
+        // The server handshake blocks until it succeeds or times out,
+        // so it must not run on the UI thread.
+        Thread {
+            val clientPtr = velorenInit(serverAddress)
+            runOnUiThread {
+                if (clientPtr != 0L) {
+                    isInitialized = true
+                    statusText.text = "Veloren: connected"
+                    val surface = cachedSurface
+                    if (surface != null && !isRendererCreated) {
+                        val result =
+                            velorenCreateRenderer(surface, surfaceWidth, surfaceHeight)
+                        if (result != 0L) {
+                            isRendererCreated = true
+                            statusText.text =
+                                "Veloren: renderer created ($surfaceWidth x $surfaceHeight)"
+                        } else {
+                            statusText.text = "Veloren: renderer create failed"
+                        }
+                    }
+                    startGameLoopIfReady()
+                } else {
+                    val err = runCatching { velorenLastInitError() }
+                        .getOrNull().orEmpty().take(160)
+                    statusText.text = if (err.isNotEmpty())
+                        "Veloren: connection failed ($err)"
+                    else
+                        "Veloren: connection failed"
+                }
+            }
+        }.start()
+    }
+
     /** Start the render loop once both the client and the renderer are ready. */
     private fun startGameLoopIfReady() {
         if (isInitialized && isRendererCreated && gameLoopThread == null) {
@@ -297,6 +351,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     /** JNI declarations */
     external fun velorenInit(serverAddress: String): Long
     external fun velorenLastInitError(): String?
+    external fun velorenSetCredentials(username: String, password: String)
     external fun velorenTick(dt: Float): Int
     external fun velorenSetAssetManager(assetManager: android.content.res.AssetManager): Int
     external fun velorenSetEventCallback(callbackObject: Any): Int
