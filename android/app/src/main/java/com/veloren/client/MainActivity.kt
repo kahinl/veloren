@@ -225,6 +225,32 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         } catch (e: Exception) {
             statusText.text = "Veloren: CA bundle failed (${e.message})"
         }
+
+        // A native panic aborts the process (release builds use panic=abort),
+        // so the previous run's crash log is the only record of what happened.
+        // Point the native side at the log file and show anything left over.
+        try {
+            val crashLog = File(filesDir, "crash.log")
+            velorenSetCrashLogPath(crashLog.absolutePath)
+            if (crashLog.exists() && crashLog.length() > 0) {
+                val text = crashLog.readText().trim()
+                crashLog.delete()
+                if (text.isNotEmpty()) {
+                    statusText.text =
+                        "Veloren: önceki çalışma - ${text.replace('\n', ' ').take(100)}"
+                    AlertDialog.Builder(this)
+                        .setTitle(
+                            if (text.contains("PANIC")) "Önceki çalışmada çökme"
+                            else "Önceki çalışma günlüğü"
+                        )
+                        .setMessage(text.takeLast(3000))
+                        .setPositiveButton("Tamam", null)
+                        .show()
+                }
+            }
+        } catch (e: Exception) {
+            statusText.text = "Veloren: çökme günlüğü hatası (${e.message})"
+        }
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -382,6 +408,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     external fun velorenLastInitError(): String?
     external fun velorenSetCredentials(username: String, password: String)
     external fun velorenSetCaCertPath(path: String)
+    external fun velorenSetCrashLogPath(path: String)
     external fun velorenTick(dt: Float): Int
     external fun velorenSetAssetManager(assetManager: android.content.res.AssetManager): Int
     external fun velorenSetEventCallback(callbackObject: Any): Int

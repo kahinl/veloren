@@ -3,6 +3,7 @@ use jni::objects::{JByteArray, JClass, JObject, JString};
 use ndk_sys::AAssetManager_fromJava;
 use std::panic;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -73,6 +74,87 @@ fn credentials_storage() -> &'static Mutex<Option<(String, String)>> {
     CREDENTIALS.get_or_init(|| Mutex::new(None))
 }
 
+/// File that the panic hook and progress breadcrumbs are written to
+/// (path set from Java in `onCreate`).
+static DIAG_LOG_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+/// Game-loop counters used for the diagnostic breadcrumbs.
+static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
+static FRAME_COUNT: AtomicU64 = AtomicU64::new(0);
+
+fn diag_log_path_storage() -> &'static Mutex<Option<PathBuf>> {
+    DIAG_LOG_PATH.get_or_init(|| Mutex::new(None))
+}
+
+/// Append one line to the diagnostic log. The release profile is built with
+/// `panic = "abort"`, so a panic kills the process before the UI can react;
+/// this file (plus the panic hook below) is the only record of how far a run
+/// got before it died.
+fn diag_log(line: &str) {
+    let Some(storage) = DIAG_LOG_PATH.get() else {
+        return;
+    };
+    // try_lock: the hook must not deadlock if a panic happens while the log
+    // lock is held; skipping one line is fine.
+    let Ok(mut guard) = storage.try_lock() else {
+        return;
+    };
+    let Some(path) = guard.as_mut() else {
+        return;
+    };
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&*path)
+    {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+/// Record every panic to the diagnostic log before the runtime aborts.
+fn install_panic_hook() {
+    static INSTALLED: std::sync::Once = std::sync::Once::new();
+    INSTALLED.call_once(|| {
+        let default_hook = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            let location = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_else(|| "unknown".to_string());
+            let thread = std::thread::current()
+                .name()
+                .unwrap_or("unnamed")
+                .to_string();
+            diag_log(&format!(
+                "PANIC: {} (at {location}, thread {thread})",
+                panic_message(info.payload())
+            ));
+            default_hook(info);
+        }));
+    });
+}
+
+/// Keep a coarse breadcrumb of game-loop progress (the last line left behind
+/// tells where a crash happened).
+fn record_tick_progress() {
+    let count = TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+    if count == 0 {
+        diag_log("first tick ok");
+    } else if count % 300 == 0 {
+        diag_log(&format!("tick {count} ok"));
+    }
+}
+
+fn record_frame_progress() {
+    let count = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
+    if count == 0 {
+        diag_log("first frame ok");
+    } else if count % 300 == 0 {
+        diag_log(&format!("frame {count} ok"));
+    }
+}
+
 #[cfg(target_os = "android")]
 fn asset_manager_storage() -> &'static Mutex<Option<i64>> {
     ASSET_MANAGER.get_or_init(|| Mutex::new(None))
@@ -98,6 +180,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     _class: JClass,
     server_address: JString,
 ) -> i64 {
+    install_panic_hook();
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         *last_init_error_storage().lock().unwrap() = None;
 
@@ -144,6 +227,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
                 *last_tick_storage().lock().unwrap() = Some(Instant::now());
 
                 println!("Veloren client initialized, connected to {}", server_addr);
+                diag_log(&format!("client connected to {server_addr}"));
                 ptr
             }
             Err(e) => {
@@ -236,6 +320,25 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCaCertPath
     }
 }
 
+/// Set the file that the panic hook and progress breadcrumbs write to.
+/// Called from Java: `velorenSetCrashLogPath(path)`
+/// The Java side reads this file on the next launch and shows its content
+/// when the previous run ended abnormally (`panic = "abort"` leaves no other
+/// trace on the phone).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCrashLogPath(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) {
+    if let Ok(path_str) = env.get_string(&path) {
+        let path_str: String = path_str.into();
+        *diag_log_path_storage().lock().unwrap() = Some(PathBuf::from(&path_str));
+        install_panic_hook();
+        println!("Android crash log path set: {path_str}");
+    }
+}
+
 /// Extract a readable message from a caught panic payload.
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
@@ -273,27 +376,19 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     let inputs = ControllerInputs::default();
 
     let client = unsafe { &mut *(client_ptr as *mut Client) };
-    // A panic across the JNI boundary aborts the whole app, so catch it here
-    // and surface the message on screen instead.
-    let result =
-        panic::catch_unwind(panic::AssertUnwindSafe(move || client.tick(inputs, elapsed)));
-    match result {
-        Ok(Ok(events)) => {
+    match client.tick(inputs, elapsed) {
+        Ok(events) => {
             if !events.is_empty() {
                 events::forward_events(&mut env, &events);
             }
+            record_tick_progress();
             0
         }
-        Ok(Err(e)) => {
+        Err(e) => {
             eprintln!("Veloren tick error: {:?}", e);
             *last_init_error_storage().lock().unwrap() = Some(format!("tick error: {e:?}"));
+            diag_log(&format!("tick error: {e:?}"));
             -3
-        }
-        Err(payload) => {
-            let msg = panic_message(&payload);
-            eprintln!("Veloren tick panicked: {msg}");
-            *last_init_error_storage().lock().unwrap() = Some(format!("tick panic: {msg}"));
-            -4
         }
     }
 }
@@ -321,6 +416,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
         let boxed = Box::new(renderer);
         let ptr = Box::into_raw(boxed) as *mut renderer::Renderer as i64;
         *renderer_storage().lock().unwrap() = Some(ptr);
+        diag_log(&format!("renderer ok ({width} x {height})"));
         ptr
     }));
 
@@ -347,19 +443,16 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     };
 
     let renderer = unsafe { &mut *(renderer_ptr as *mut renderer::Renderer) };
-    let result = panic::catch_unwind(panic::AssertUnwindSafe(move || renderer.render()));
-    match result {
-        Ok(Ok(())) => 0,
-        Ok(Err(e)) => {
+    match renderer.render() {
+        Ok(()) => {
+            record_frame_progress();
+            0
+        }
+        Err(e) => {
             eprintln!("Render frame error: {:?}", e);
             *last_init_error_storage().lock().unwrap() = Some(format!("render error: {e:?}"));
+            diag_log(&format!("render error: {e:?}"));
             -3
-        }
-        Err(payload) => {
-            let msg = panic_message(&payload);
-            eprintln!("Render frame panicked: {msg}");
-            *last_init_error_storage().lock().unwrap() = Some(format!("render panic: {msg}"));
-            -4
         }
     }
 }
@@ -495,6 +588,12 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
     *renderer_storage().lock().unwrap() = None;
     *runtime_storage().lock().unwrap() = None;
     *last_tick_storage().lock().unwrap() = None;
+
+    // A clean shutdown proves the run did not crash: clear the diagnostics so
+    // the next launch does not show a stale report.
+    if let Some(path) = diag_log_path_storage().lock().unwrap().as_ref() {
+        let _ = std::fs::remove_file(path);
+    }
 
     #[cfg(target_os = "android")]
     {
