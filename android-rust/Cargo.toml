@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 jni = "0.21"
 veloren-common = { path = "../common", features = ["no-assets"] }
 veloren-client = { path = "../client" }
+veloren-server = { path = "../server", default-features = false, features = ["worldgen"] }
 tokio = { version = "1", features = ["rt", "macros", "time"] }
 vek = { version = "0.17", features = ["serde", "mint"] }
 

@@ -750,6 +750,17 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
     }
 }
 
+/// Offline spike (throwaway branch): references `veloren_server::Server::new` so the
+/// linker proves the server crate can link for aarch64-linux-android. Not called from Java.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenOfflineSpikeMarker(
+    _env: JNIEnv,
+    _class: JClass,
+) -> i32 {
+    let _keep = veloren_server::Server::new as *const ();
+    0
+}
+
 /// Set mobile performance tier for Android optimizations.
 /// Called from Java: `velorenSetMobilePerfTier(tier: int)`
 /// tier: 0=None, 1=Low, 2=Medium
