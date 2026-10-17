@@ -148,7 +148,16 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             }
             Err(e) => {
                 eprintln!("Veloren client init failed: {:?}", e);
-                *last_init_error_storage().lock().unwrap() = Some(format!("{e:?}"));
+                // Without credentials the client falls back to the auth-less
+                // "android" name, which auth-required servers reject; say so
+                // on screen instead of leaving only the raw server error.
+                let has_creds = credentials_storage().lock().unwrap().is_some();
+                let msg = if has_creds {
+                    format!("{e:?}")
+                } else {
+                    format!("no account credentials set; {e:?}")
+                };
+                *last_init_error_storage().lock().unwrap() = Some(msg);
                 0
             }
         }
@@ -227,9 +236,21 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCaCertPath
     }
 }
 
+/// Extract a readable message from a caught panic payload.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
 /// Run one tick of the Veloren client.
 /// Called from Java each frame: `velorenTick(dt)`
-/// Returns: i32 (0 on success, -1 on error)
+/// Returns: i32 (0 on success, negative on error; the message goes to
+/// `velorenLastInitError`)
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     mut env: JNIEnv,
@@ -252,16 +273,27 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
     let inputs = ControllerInputs::default();
 
     let client = unsafe { &mut *(client_ptr as *mut Client) };
-    match client.tick(inputs, elapsed) {
-        Ok(events) => {
+    // A panic across the JNI boundary aborts the whole app, so catch it here
+    // and surface the message on screen instead.
+    let result =
+        panic::catch_unwind(panic::AssertUnwindSafe(move || client.tick(inputs, elapsed)));
+    match result {
+        Ok(Ok(events)) => {
             if !events.is_empty() {
                 events::forward_events(&mut env, &events);
             }
             0
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             eprintln!("Veloren tick error: {:?}", e);
+            *last_init_error_storage().lock().unwrap() = Some(format!("tick error: {e:?}"));
             -3
+        }
+        Err(payload) => {
+            let msg = panic_message(&payload);
+            eprintln!("Veloren tick panicked: {msg}");
+            *last_init_error_storage().lock().unwrap() = Some(format!("tick panic: {msg}"));
+            -4
         }
     }
 }
@@ -315,11 +347,19 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
     };
 
     let renderer = unsafe { &mut *(renderer_ptr as *mut renderer::Renderer) };
-    match renderer.render() {
-        Ok(()) => 0,
-        Err(e) => {
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(move || renderer.render()));
+    match result {
+        Ok(Ok(())) => 0,
+        Ok(Err(e)) => {
             eprintln!("Render frame error: {:?}", e);
+            *last_init_error_storage().lock().unwrap() = Some(format!("render error: {e:?}"));
             -3
+        }
+        Err(payload) => {
+            let msg = panic_message(&payload);
+            eprintln!("Render frame panicked: {msg}");
+            *last_init_error_storage().lock().unwrap() = Some(format!("render panic: {msg}"));
+            -4
         }
     }
 }

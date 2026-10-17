@@ -3,6 +3,7 @@ package com.veloren.client
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.DialogInterface
 import android.os.Bundle
 import android.text.InputType
 import android.view.Surface
@@ -86,9 +87,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         menuView = MenuView(this)
         menuView.onMenuAction = object : MenuView.OnMenuAction {
             override fun onPlayClicked() {
-                if (loginUsername.isEmpty()) {
+                // The password is never persisted, so after a restart we must
+                // ask again; otherwise the native side falls back to the
+                // auth-less "android" name and the server rejects it.
+                if (loginUsername.isEmpty() || loginPassword.isEmpty()) {
                     showLoginDialog()
                 } else {
+                    velorenSetCredentials(loginUsername, loginPassword)
                     startConnect()
                 }
             }
@@ -298,23 +303,33 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         layout.addView(userEdit)
         layout.addView(passEdit)
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Veloren hesabı")
             .setMessage(
                 "Resmi sunucu hesap girişi ister. veloren.net'te ücretsiz hesap açabilirsin. " +
                     "Boş bırakırsan 'android' adıyla hesapsız sunuculara bağlanılır."
             )
             .setView(layout)
-            .setPositiveButton("Bağlan") { _, _ ->
-                loginUsername = userEdit.text.toString().trim()
-                loginPassword = passEdit.text.toString()
-                getSharedPreferences("veloren", Context.MODE_PRIVATE).edit()
-                    .putString("username", loginUsername).apply()
-                velorenSetCredentials(loginUsername, loginPassword)
-                startConnect()
-            }
+            .setPositiveButton("Bağlan", null)
             .setNegativeButton("İptal", null)
-            .show()
+            .create()
+        dialog.show()
+        // Override the button so the dialog stays open when validation fails.
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            val user = userEdit.text.toString().trim()
+            val pass = passEdit.text.toString()
+            if (user.isNotEmpty() && pass.isEmpty()) {
+                passEdit.error = "Şifre gerekli"
+                return@setOnClickListener
+            }
+            loginUsername = user
+            loginPassword = pass
+            getSharedPreferences("veloren", Context.MODE_PRIVATE).edit()
+                .putString("username", loginUsername).apply()
+            velorenSetCredentials(loginUsername, loginPassword)
+            dialog.dismiss()
+            startConnect()
+        }
     }
 
     /** Connect to the server and create the renderer. */
@@ -408,6 +423,17 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         var running = true
         private val targetFrameTime = 1_000_000_000L / 60 // 60 FPS in nanoseconds
 
+        private fun stopWithError(where: String) {
+            running = false
+            val err = runCatching { velorenLastInitError() }.getOrNull().orEmpty().take(160)
+            runOnUiThread {
+                statusText.text = if (err.isNotEmpty())
+                    "Veloren: $where failed ($err)"
+                else
+                    "Veloren: $where failed"
+            }
+        }
+
         override fun run() {
             val startTime = System.nanoTime()
             var lastTime = startTime
@@ -421,11 +447,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     val dt = elapsedNanos / 1_000_000_000.0f
 
                     // 1) Update game state
-                    velorenTick(dt)
+                    if (velorenTick(dt) < 0) {
+                        stopWithError("tick")
+                        return
+                    }
 
                     // 2) Render frame
-                    if (isRendererCreated) {
-                        velorenRenderFrame()
+                    if (isRendererCreated && velorenRenderFrame() < 0) {
+                        stopWithError("render")
+                        return
                     }
 
                     // 3) Generate and push audio
