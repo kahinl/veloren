@@ -478,6 +478,45 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
     }
 }
 
+/// Shared storage for the graphics/performance settings below.
+/// These are initialized lazily via `get_or_init` so a first-time
+/// call from Java never panics on an uninitialized `OnceLock`.
+static WEATHER_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
+static CLOUDS_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
+static PARTICLES_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
+static THREAD_COUNT: OnceLock<Mutex<usize>> = OnceLock::new();
+static ON_DEMAND_ASSETS: OnceLock<Mutex<bool>> = OnceLock::new();
+static TEXTURE_COMPRESSION: OnceLock<Mutex<i32>> = OnceLock::new();
+static MAX_FPS: OnceLock<Mutex<u32>> = OnceLock::new();
+
+fn weather_enabled_storage() -> &'static Mutex<bool> {
+    WEATHER_ENABLED.get_or_init(|| Mutex::new(true))
+}
+
+fn clouds_enabled_storage() -> &'static Mutex<bool> {
+    CLOUDS_ENABLED.get_or_init(|| Mutex::new(true))
+}
+
+fn particles_enabled_storage() -> &'static Mutex<bool> {
+    PARTICLES_ENABLED.get_or_init(|| Mutex::new(true))
+}
+
+fn thread_count_storage() -> &'static Mutex<usize> {
+    THREAD_COUNT.get_or_init(|| Mutex::new(4))
+}
+
+fn on_demand_assets_storage() -> &'static Mutex<bool> {
+    ON_DEMAND_ASSETS.get_or_init(|| Mutex::new(true))
+}
+
+fn texture_compression_storage() -> &'static Mutex<i32> {
+    TEXTURE_COMPRESSION.get_or_init(|| Mutex::new(0))
+}
+
+fn max_fps_storage() -> &'static Mutex<u32> {
+    MAX_FPS.get_or_init(|| Mutex::new(60))
+}
+
 /// Set weather enabled (rain/snow).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetWeatherEnabled(
@@ -485,8 +524,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetWeatherEna
     _class: JClass,
     enabled: u8,
 ) {
-    static WEATHER_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
-    *WEATHER_ENABLED.get().unwrap().lock().unwrap() = enabled != 0;
+    *weather_enabled_storage().lock().unwrap() = enabled != 0;
 }
 
 /// Get weather enabled state.
@@ -495,8 +533,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetWeatherEna
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    static WEATHER_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
-    if *WEATHER_ENABLED.get().unwrap().lock().unwrap() {
+    if *weather_enabled_storage().lock().unwrap() {
         1
     } else {
         0
@@ -510,8 +547,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCloudsEnab
     _class: JClass,
     enabled: u8,
 ) {
-    static CLOUDS_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
-    *CLOUDS_ENABLED.get().unwrap().lock().unwrap() = enabled != 0;
+    *clouds_enabled_storage().lock().unwrap() = enabled != 0;
 }
 
 /// Get clouds enabled state.
@@ -520,8 +556,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetCloudsEnab
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    static CLOUDS_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
-    if *CLOUDS_ENABLED.get().unwrap().lock().unwrap() {
+    if *clouds_enabled_storage().lock().unwrap() {
         1
     } else {
         0
@@ -535,8 +570,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetParticlesE
     _class: JClass,
     enabled: u8,
 ) {
-    static PARTICLES_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
-    *PARTICLES_ENABLED.get().unwrap().lock().unwrap() = enabled != 0;
+    *particles_enabled_storage().lock().unwrap() = enabled != 0;
 }
 
 /// Get particles enabled state.
@@ -545,8 +579,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetParticlesE
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    static PARTICLES_ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
-    if *PARTICLES_ENABLED.get().unwrap().lock().unwrap() {
+    if *particles_enabled_storage().lock().unwrap() {
         1
     } else {
         0
@@ -572,8 +605,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetThreadCoun
     _class: JClass,
     count: i32,
 ) {
-    static THREAD_COUNT: OnceLock<Mutex<usize>> = OnceLock::new();
-    *THREAD_COUNT.get().unwrap().lock().unwrap() = count.max(1) as usize;
+    *thread_count_storage().lock().unwrap() = count.max(1) as usize;
     println!("Rayon thread count set to {}", count);
 }
 
@@ -583,8 +615,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetThreadCoun
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    static THREAD_COUNT: OnceLock<Mutex<usize>> = OnceLock::new();
-    *THREAD_COUNT.get().unwrap().lock().unwrap() as i32
+    *thread_count_storage().lock().unwrap() as i32
 }
 
 /// Enable/disable on-demand asset loading.
@@ -594,8 +625,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetOnDemandAs
     _class: JClass,
     enabled: u8,
 ) {
-    static ON_DEMAND_ASSETS: OnceLock<Mutex<bool>> = OnceLock::new();
-    *ON_DEMAND_ASSETS.get().unwrap().lock().unwrap() = enabled != 0;
+    *on_demand_assets_storage().lock().unwrap() = enabled != 0;
 }
 
 /// Get on-demand asset loading state.
@@ -604,8 +634,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetOnDemandAs
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    static ON_DEMAND_ASSETS: OnceLock<Mutex<bool>> = OnceLock::new();
-    if *ON_DEMAND_ASSETS.get().unwrap().lock().unwrap() {
+    if *on_demand_assets_storage().lock().unwrap() {
         1
     } else {
         0
@@ -621,8 +650,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetTextureCom
     _class: JClass,
     format: i32,
 ) {
-    static TEXTURE_COMPRESSION: OnceLock<Mutex<i32>> = OnceLock::new();
-    *TEXTURE_COMPRESSION.get().unwrap().lock().unwrap() = format;
+    *texture_compression_storage().lock().unwrap() = format;
 }
 
 /// Get texture compression format.
@@ -631,8 +659,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTextureCom
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    static TEXTURE_COMPRESSION: OnceLock<Mutex<i32>> = OnceLock::new();
-    *TEXTURE_COMPRESSION.get().unwrap().lock().unwrap()
+    *texture_compression_storage().lock().unwrap()
 }
 
 /// Set maximum FPS limit for battery/heat saving.
@@ -643,8 +670,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMaxFps(
     _class: JClass,
     fps: i32,
 ) {
-    static MAX_FPS: OnceLock<Mutex<u32>> = OnceLock::new();
-    *MAX_FPS.get().unwrap().lock().unwrap() = fps.max(15).min(120) as u32;
+    *max_fps_storage().lock().unwrap() = fps.max(15).min(120) as u32;
 }
 
 /// Get maximum FPS limit.
@@ -653,8 +679,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetMaxFps(
     _env: JNIEnv,
     _class: JClass,
 ) -> i32 {
-    static MAX_FPS: OnceLock<Mutex<u32>> = OnceLock::new();
-    *MAX_FPS.get().unwrap().lock().unwrap() as i32
+    *max_fps_storage().lock().unwrap() as i32
 }
 
 /// Simple credential provider for Android (no auth).
