@@ -1,7 +1,9 @@
 use jni::JNIEnv;
 use jni::objects::JObject;
 use ndk_sys::ANativeWindow_fromSurface;
-use raw_window_handle::{AndroidNdkWindowHandle, HasWindowHandle};
+use raw_window_handle::{
+    AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle,
+};
 use wgpu::util::DeviceExt;
 
 // Field order matters: Rust drops fields in declaration order.
@@ -26,24 +28,24 @@ impl Renderer {
             ..Default::default()
         });
 
-        // Get raw JNIEnv pointer from JavaVM (jni 0.21 doesn't expose as_mut_ptr on JNIEnv)
-        let vm = env.get_java_vm().map_err(|e| format!("Failed to get JavaVM: {:?}", e))?;
-        let env_ptr: *mut std::ffi::c_void = vm.get_env().map_err(|e| format!("Failed to get JNIEnv pointer: {:?}", e))? as *mut std::ffi::c_void;
-
-        // Extract ANativeWindow from Java Surface via JNI
+        // jni 0.21 and ndk-sys 0.6 both bind jni-sys 0.3, so the raw pointers line up.
         let native_window = unsafe {
-            ANativeWindow_fromSurface(env_ptr as *mut ndk_sys::JNIEnv, surface_obj.into_raw() as ndk_sys::jobject)
+            ANativeWindow_fromSurface(env.get_raw(), surface_obj.into_raw())
         };
 
-        if native_window.is_null() {
-            return Err("Failed to create ANativeWindow from Surface".to_string());
-        }
+        let native_window_ptr = std::ptr::NonNull::new(native_window as *mut std::ffi::c_void)
+            .ok_or_else(|| "Failed to create ANativeWindow from Surface".to_string())?;
 
-        let raw_window_handle = AndroidNdkWindowHandle::new(native_window as *mut std::ffi::c_void);
+        let raw_window_handle = AndroidNdkWindowHandle::new(native_window_ptr);
 
+        // raw-window-handle 0.6 has no HasWindowHandle impl for AndroidNdkWindowHandle,
+        // so the surface has to be created through the unsafe raw-handle path.
         let surface = unsafe {
-            instance.create_surface(raw_window_handle)
-                .map_err(|e| format!("Failed to create wgpu surface: {:?}", e))?
+            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: RawDisplayHandle::Android(AndroidDisplayHandle::new()),
+                raw_window_handle: RawWindowHandle::AndroidNdk(raw_window_handle),
+            })
+            .map_err(|e| format!("Failed to create wgpu surface: {:?}", e))?
         };
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -77,7 +79,7 @@ impl Renderer {
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: wgpu::FrameLatencyMode::default(),
+            desired_maximum_frame_latency: 2,
         };
 
         surface.configure(&device, &config);

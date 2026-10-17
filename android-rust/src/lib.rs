@@ -271,19 +271,12 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManager(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     asset_manager: JObject,
 ) -> i32 {
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        let vm = env.get_java_vm().map_err(|e| {
-            eprintln!("Failed to get JavaVM: {:?}", e);
-            -1i32
-        })?;
-        let env_ptr: *mut ndk_sys::JNIEnv = vm.get_env().map_err(|e| {
-            eprintln!("Failed to get JNIEnv pointer: {:?}", e);
-            -1i32
-        })?;
+        let env_ptr = env.get_raw();
 
         let mgr_ptr: *mut ndk_sys::AAssetManager = unsafe {
             AAssetManager_fromJava(env_ptr, asset_manager.into_raw())
