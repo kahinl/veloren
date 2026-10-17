@@ -64,13 +64,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
 
       - name: Check Rust library for Android (aarch64)
         run: cargo check --release --package veloren-voxygen --target aarch64-linux-android
