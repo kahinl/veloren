@@ -5,7 +5,6 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import kotlin.math.sqrt
 
 /**
  * Dokunmatik oyun kontrolleri overlay'i.
