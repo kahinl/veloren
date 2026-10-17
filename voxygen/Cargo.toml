@@ -65,7 +65,7 @@ i18n-helpers = { package = "veloren-voxygen-i18n-helpers", path = "i18n-helpers"
 voxygen-egui = { package = "veloren-voxygen-egui", path = "egui", optional = true }
 
 # Graphics
-winit = { version = "0.30.12", features = ["serde"] }
+winit = { version = "0.30.12", features = ["serde", "android-native-activity"] }
 wgpu = { version = "27.0.1", features = ["spirv", "glsl"] }
 wgpu-profiler = "0.25"
 bytemuck = { version = "1.7", features = ["derive"] }
