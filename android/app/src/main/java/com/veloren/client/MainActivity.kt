@@ -251,6 +251,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         } catch (e: Exception) {
             statusText.text = "Veloren: çökme günlüğü hatası (${e.message})"
         }
+
+        // The APK ships no game asset files, but parts of the client load from
+        // the asset system opportunistically: the physics system reads the ship
+        // figuredata manifest on every tick. Create a writable stub asset
+        // directory (canary file + empty ship manifest) so the asset system can
+        // initialise, and point it at that directory via VELOREN_ASSETS.
+        velorenSetAssetDirPath(File(filesDir, "veloren/assets").absolutePath)
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -408,6 +415,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     external fun velorenLastInitError(): String?
     external fun velorenSetCredentials(username: String, password: String)
     external fun velorenSetCaCertPath(path: String)
+    external fun velorenSetAssetDirPath(path: String)
     external fun velorenSetCrashLogPath(path: String)
     external fun velorenTick(dt: Float): Int
     external fun velorenSetAssetManager(assetManager: android.content.res.AssetManager): Int

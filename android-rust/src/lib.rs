@@ -320,6 +320,54 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCaCertPath
     }
 }
 
+/// Create a writable stub asset directory and point the shared asset system
+/// at it via `VELOREN_ASSETS`.
+/// Called from Java: `velorenSetAssetDirPath(path)`
+/// The APK ships no game asset files, but parts of the client load from the
+/// asset system opportunistically (the physics system reads the ship
+/// figuredata manifest on every tick), and that load panics while locating a
+/// missing asset directory. A directory holding the canary file and an empty
+/// ship manifest keeps the asset system functional; content that needs real
+/// asset files stays unavailable.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetDirPath(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) {
+    if let Ok(path_str) = env.get_string(&path) {
+        let path_str: String = path_str.into();
+        // `ASSETS_PATH` appends `assets` unless the path already ends with it.
+        let mut root = PathBuf::from(&path_str);
+        if !root.ends_with("assets") {
+            root = root.join("assets");
+        }
+        let common = root.join("common");
+        let manifests = common.join("manifests");
+        let result = std::fs::create_dir_all(&manifests)
+            .and_then(|()| std::fs::write(common.join("canary.canary"), "VELOREN_CANARY_MAGIC\n"))
+            .and_then(|()| {
+                std::fs::write(
+                    manifests.join("ship_manifest.ron"),
+                    "#![enable(unwrap_newtypes)]\n{}\n",
+                )
+            });
+        match result {
+            Ok(()) => {
+                // SAFETY: called once from `MainActivity.onCreate` before any
+                // client thread exists, so nothing else reads the environment
+                // concurrently.
+                unsafe { std::env::set_var("VELOREN_ASSETS", &root) };
+                println!("Android stub asset dir set: {}", root.display());
+            },
+            Err(err) => {
+                diag_log(&format!("stub asset dir setup failed: {err}"));
+                println!("Android stub asset dir setup failed: {err}");
+            },
+        }
+    }
+}
+
 /// Set the file that the panic hook and progress breadcrumbs write to.
 /// Called from Java: `velorenSetCrashLogPath(path)`
 /// The Java side reads this file on the next launch and shows its content
