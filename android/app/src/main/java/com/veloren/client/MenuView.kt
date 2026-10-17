@@ -83,7 +83,7 @@ class MenuView @JvmOverloads constructor(
     private var particlesEnabled = false
 
     // Current server address (displayed in settings)
-    var serverAddress: String = "veloren.club:3300"
+    var serverAddress: String = "server.veloren.net"
 
     var onMenuAction: OnMenuAction? = null
 
@@ -198,7 +198,7 @@ class MenuView @JvmOverloads constructor(
         drawButton(canvas, btnServerAddress, "Sunucu: $serverAddress")
 
         // Server address placeholder
-        canvas.drawText("Sunucu: veloren.club:3300", 40f, cy + 80f, settingPaint)
+        canvas.drawText("Sunucu: $serverAddress", 40f, cy + 80f, settingPaint)
         canvas.drawText("Kontroller: Dokunmatik joystick + butonlar", 40f, cy + 110f, settingPaint)
     }
 

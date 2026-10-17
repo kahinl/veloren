@@ -24,7 +24,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var audioInitialized = false
 
     // Veloren server address - configurable from menu
-    private var serverAddress: String = "veloren.club:3300"
+    private var serverAddress: String = "server.veloren.net"
 
     // Cached surface passed to the native renderer
     private var cachedSurface: Surface? = null
@@ -100,7 +100,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             }
                             startGameLoopIfReady()
                         } else {
-                            statusText.text = "Veloren: connection failed"
+                            val err = runCatching { velorenLastInitError() }
+                                .getOrNull().orEmpty().take(160)
+                            statusText.text = if (err.isNotEmpty())
+                                "Veloren: connection failed ($err)"
+                            else
+                                "Veloren: connection failed"
                         }
                     }
                 }.start()
@@ -291,6 +296,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     /** JNI declarations */
     external fun velorenInit(serverAddress: String): Long
+    external fun velorenLastInitError(): String?
     external fun velorenTick(dt: Float): Int
     external fun velorenSetAssetManager(assetManager: android.content.res.AssetManager): Int
     external fun velorenSetEventCallback(callbackObject: Any): Int

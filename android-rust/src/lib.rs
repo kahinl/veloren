@@ -59,6 +59,13 @@ fn renderer_storage() -> &'static Mutex<Option<i64>> {
     RENDERER.get_or_init(|| Mutex::new(None))
 }
 
+/// Last error message from `velorenInit`, surfaced to the UI on failure.
+static LAST_INIT_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn last_init_error_storage() -> &'static Mutex<Option<String>> {
+    LAST_INIT_ERROR.get_or_init(|| Mutex::new(None))
+}
+
 #[cfg(target_os = "android")]
 fn asset_manager_storage() -> &'static Mutex<Option<i64>> {
     ASSET_MANAGER.get_or_init(|| Mutex::new(None))
@@ -85,15 +92,18 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     server_address: JString,
 ) -> i64 {
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        *last_init_error_storage().lock().unwrap() = None;
+
         let server_addr: String = env
             .get_string(&server_address)
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| "veloren.club:3300".to_string());
+            .unwrap_or_else(|_| "server.veloren.net".to_string());
 
         let runtime = match Runtime::new() {
             Ok(rt) => rt,
             Err(e) => {
                 eprintln!("Failed to create tokio runtime: {}", e);
+                *last_init_error_storage().lock().unwrap() = Some(format!("tokio runtime: {e}"));
                 return 0i64;
             }
         };
@@ -131,6 +141,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
             }
             Err(e) => {
                 eprintln!("Veloren client init failed: {:?}", e);
+                *last_init_error_storage().lock().unwrap() = Some(format!("{e:?}"));
                 0
             }
         }
@@ -140,9 +151,27 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
         Ok(ptr) => ptr,
         Err(_panic) => {
             eprintln!("Veloren init panicked, caught to prevent crash");
+            *last_init_error_storage().lock().unwrap() = Some("init panic".to_string());
             0
         }
     }
+}
+
+/// Get the last client init error message (empty string when none).
+/// Called from Java: `velorenLastInitError()`
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLastInitError(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jstring {
+    let msg = last_init_error_storage()
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_default();
+    env.new_string(msg)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 /// Run one tick of the Veloren client.
