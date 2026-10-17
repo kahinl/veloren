@@ -208,7 +208,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
         if (!isRendererCreated && isInitialized && cachedSurface != null) {
             val result = velorenCreateRenderer(cachedSurface!!, w, h)
-            if (result == 0) {
+            if (result == 0L) {
                 isRendererCreated = true
                 statusText.text = "Veloren: renderer created ($w x $h)"
             } else {
