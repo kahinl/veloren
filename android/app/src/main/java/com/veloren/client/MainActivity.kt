@@ -1,5 +1,6 @@
 package com.veloren.client
 
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.os.Bundle
@@ -10,9 +11,8 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
+class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private lateinit var gameSurface: SurfaceView
     private lateinit var touchControls: TouchControlsView
@@ -78,7 +78,32 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             override fun onPlayClicked() {
                 menuView.hide()
                 statusText.text = "Veloren: connecting to $serverAddress..."
-                velorenInit(serverAddress)
+                // The server handshake blocks until it succeeds or times out,
+                // so it must not run on the UI thread.
+                Thread {
+                    val clientPtr = velorenInit(serverAddress)
+                    runOnUiThread {
+                        if (clientPtr != 0L) {
+                            isInitialized = true
+                            statusText.text = "Veloren: connected"
+                            val surface = cachedSurface
+                            if (surface != null && !isRendererCreated) {
+                                val result =
+                                    velorenCreateRenderer(surface, surfaceWidth, surfaceHeight)
+                                if (result != 0L) {
+                                    isRendererCreated = true
+                                    statusText.text =
+                                        "Veloren: renderer created ($surfaceWidth x $surfaceHeight)"
+                                } else {
+                                    statusText.text = "Veloren: renderer create failed"
+                                }
+                            }
+                            startGameLoopIfReady()
+                        } else {
+                            statusText.text = "Veloren: connection failed"
+                        }
+                    }
+                }.start()
             }
 
             override fun onSettingsClicked() {
@@ -208,11 +233,12 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
         if (!isRendererCreated && isInitialized && cachedSurface != null) {
             val result = velorenCreateRenderer(cachedSurface!!, w, h)
-            if (result == 0L) {
+            if (result != 0L) {
                 isRendererCreated = true
                 statusText.text = "Veloren: renderer created ($w x $h)"
+                startGameLoopIfReady()
             } else {
-                statusText.text = "Veloren: renderer create failed (code $result)"
+                statusText.text = "Veloren: renderer create failed"
             }
         } else if (isRendererCreated) {
             velorenResize(w, h)
@@ -234,18 +260,14 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
-        if (isInitialized && isRendererCreated) {
-            gameLoopThread = GameLoopThread()
-            gameLoopThread?.start()
-        }
+        startGameLoopIfReady()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && isInitialized && isRendererCreated) {
-            gameLoopThread = GameLoopThread()
-            gameLoopThread?.start()
-        } else if (!hasFocus) {
+        if (hasFocus) {
+            startGameLoopIfReady()
+        } else {
             gameLoopThread?.running = false
             gameLoopThread = null
         }
@@ -257,6 +279,14 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         velorenAudioMixerShutdown()
         velorenAudioShutdown()
         velorenShutdown()
+    }
+
+    /** Start the render loop once both the client and the renderer are ready. */
+    private fun startGameLoopIfReady() {
+        if (isInitialized && isRendererCreated && gameLoopThread == null) {
+            gameLoopThread = GameLoopThread()
+            gameLoopThread?.start()
+        }
     }
 
     /** JNI declarations */
@@ -283,7 +313,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     external fun velorenCreateRenderer(surface: Surface, width: Int, height: Int): Long
     external fun velorenRenderFrame(): Int
     external fun velorenLoadAsset(path: String): ByteArray
-    external fun velorenResize(width: Int, height: Int): Int
+    external fun velorenResize(width: Int, height: Int)
     external fun velorenShutdown(): Unit
     external fun velorenSetInput(moveX: Float, moveY: Float, moveZ: Float, action: Int, pressed: Int): Unit
     external fun velorenGetTick(): Int
@@ -298,6 +328,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     /** Game loop thread - runs at 60 FPS */
     private inner class GameLoopThread : Thread() {
+        @Volatile
         var running = true
         private val targetFrameTime = 1_000_000_000L / 60 // 60 FPS in nanoseconds
 
