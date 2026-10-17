@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [master, android-port]
+    branches: [master, android-port, offline-spike]
   pull_request:
     branches: [master, android-port]
   workflow_dispatch:
@@ -74,6 +74,14 @@ jobs:
 
       - name: Build Rust library for Android (aarch64)
         run: cargo build --release --package veloren-android --target aarch64-linux-android
+        env:
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.CLANG_PATH }}
+          CC_aarch64_linux_android: ${{ env.CLANG_PATH }}
+          CXX_aarch64_linux_android: ${{ env.CLANGXX_PATH }}
+          AR_aarch64_linux_android: ${{ env.AR_PATH }}
+
+      - name: Check server crate compiles for Android (offline spike)
+        run: cargo check --release --package veloren-server --no-default-features --features worldgen --target aarch64-linux-android
         env:
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.CLANG_PATH }}
           CC_aarch64_linux_android: ${{ env.CLANG_PATH }}
