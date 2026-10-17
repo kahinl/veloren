@@ -1,5 +1,7 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JObject, JString};
+use ndk_sys::AAssetManager_fromJava;
+use std::panic;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
@@ -75,66 +77,76 @@ fn builder_callback(_builder: &mut DispatcherBuilder) {}
 
 /// Initialize the Veloren client and connect to a server.
 /// Called from Java: `velorenInit(serverAddress: String)`
-/// Returns: i64 (raw pointer to Box<Client> cast to i64)
+/// Returns: i64 (raw pointer to Box<Client> cast to i64), 0 on failure.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenInit(
     mut env: JNIEnv,
     _class: JClass,
     server_address: JString,
 ) -> i64 {
-    let server_addr: String = env
-        .get_string(&server_address)
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "veloren.club:3300".to_string());
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let server_addr: String = env
+            .get_string(&server_address)
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "veloren.club:3300".to_string());
 
-    let runtime = match Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("Failed to create tokio runtime: {}", e);
-            return 0;
+        let runtime = match Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("Failed to create tokio runtime: {}", e);
+                return 0i64;
+            }
+        };
+
+        let rt = std::sync::Arc::new(runtime);
+        *runtime_storage().lock().unwrap() = Some(std::sync::Arc::clone(&rt));
+
+        let addr = ConnectionArgs::Tcp {
+            hostname: server_addr.clone(),
+            prefer_ipv6: false,
+        };
+
+        let stage_callback: &(dyn Fn(ClientInitStage) + Send + Sync) = &|_: ClientInitStage| {};
+
+        let client = rt.block_on(Client::new(
+            addr,
+            std::sync::Arc::clone(&rt),
+            None,
+            &StaticCredentialProvider,
+            stage_callback,
+            builder_callback,
+            PathBuf::default(),
+            ClientType::Game,
+        ));
+
+        match client {
+            Ok(c) => {
+                let boxed = Box::new(c);
+                let ptr = Box::into_raw(boxed) as *mut Client as i64;
+                *client_storage().lock().unwrap() = Some(ptr);
+                *last_tick_storage().lock().unwrap() = Some(Instant::now());
+
+                println!("Veloren client initialized, connected to {}", server_addr);
+                ptr
+            }
+            Err(e) => {
+                eprintln!("Veloren client init failed: {:?}", e);
+                0
+            }
         }
-    };
+    }));
 
-    let rt = std::sync::Arc::new(runtime);
-    *runtime_storage().lock().unwrap() = Some(std::sync::Arc::clone(&rt));
-
-    let addr = ConnectionArgs::Tcp {
-        hostname: server_addr.clone(),
-        prefer_ipv6: false,
-    };
-
-    let stage_callback: &(dyn Fn(ClientInitStage) + Send + Sync) = &|_: ClientInitStage| {};
-
-    let client = rt.block_on(Client::new(
-        addr,
-        std::sync::Arc::clone(&rt),
-        None,
-        &StaticCredentialProvider,
-        stage_callback,
-        builder_callback,
-        PathBuf::default(),
-        ClientType::Game,
-    ));
-
-    match client {
-        Ok(c) => {
-            let boxed = Box::new(c);
-            let ptr = Box::into_raw(boxed) as *mut Client as i64;
-            *client_storage().lock().unwrap() = Some(ptr);
-            *last_tick_storage().lock().unwrap() = Some(Instant::now());
-
-            println!("Veloren client initialized, connected to {}", server_addr);
-            ptr
-        }
-        Err(e) => {
-            eprintln!("Veloren client init failed: {:?}", e);
+    match result {
+        Ok(ptr) => ptr,
+        Err(_panic) => {
+            eprintln!("Veloren init panicked, caught to prevent crash");
             0
         }
     }
 }
 
 /// Run one tick of the Veloren client.
-/// Called from Java each frame: `velorenTick(clientPtr, dt)`
+/// Called from Java each frame: `velorenTick(dt)`
 /// Returns: i32 (0 on success, -1 on error)
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
@@ -174,7 +186,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenTick(
 
 /// Create the wgpu renderer and bind it to the Android Surface.
 /// Called from Java: `velorenCreateRenderer(surface, width, height)`
-/// Returns: i64 (raw pointer to Box<Renderer> cast to i64)
+/// Returns: i64 (raw pointer to Box<Renderer> cast to i64), 0 on failure.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRenderer(
     mut env: JNIEnv,
@@ -183,22 +195,32 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenCreateRendere
     width: i32,
     height: i32,
 ) -> i64 {
-    let renderer = match renderer::Renderer::new(&env, surface, width as u32, height as u32) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Failed to create renderer: {}", e);
-            return 0;
-        }
-    };
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let renderer = match renderer::Renderer::new(&env, surface, width as u32, height as u32) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Failed to create renderer: {}", e);
+                return 0i64;
+            }
+        };
 
-    let boxed = Box::new(renderer);
-    let ptr = Box::into_raw(boxed) as *mut renderer::Renderer as i64;
-    *renderer_storage().lock().unwrap() = Some(ptr);
-    ptr
+        let boxed = Box::new(renderer);
+        let ptr = Box::into_raw(boxed) as *mut renderer::Renderer as i64;
+        *renderer_storage().lock().unwrap() = Some(ptr);
+        ptr
+    }));
+
+    match result {
+        Ok(ptr) => ptr,
+        Err(_panic) => {
+            eprintln!("Renderer creation panicked, caught to prevent crash");
+            0
+        }
+    }
 }
 
 /// Render one frame.
-/// Called from Java each frame: `velorenRenderFrame(clientPtr)`
+/// Called from Java each frame: `velorenRenderFrame()`
 /// Returns: i32 (0 on success, -1 on error)
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
@@ -221,7 +243,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenRenderFrame(
 }
 
 /// Resize the renderer surface.
-/// Called from Java: `velorenResize(clientPtr, width, height)`
+/// Called from Java: `velorenResize(width, height)`
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
     _env: JNIEnv,
@@ -229,13 +251,19 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenResize(
     width: i32,
     height: i32,
 ) {
-    let mut renderer_guard = renderer_storage().lock().unwrap();
-    let Some(renderer_ptr) = renderer_guard.as_mut() else {
-        return;
-    };
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let mut renderer_guard = renderer_storage().lock().unwrap();
+        let Some(renderer_ptr) = renderer_guard.as_mut() else {
+            return;
+        };
 
-    let renderer = unsafe { &mut *(*renderer_ptr as *mut renderer::Renderer) };
-    renderer.resize(width as u32, height as u32);
+        let renderer = unsafe { &mut *(*renderer_ptr as *mut renderer::Renderer) };
+        renderer.resize(width as u32, height as u32);
+    }));
+
+    if result.is_err() {
+        eprintln!("Renderer resize panicked, caught to prevent crash");
+    }
 }
 
 /// Set the Android AAssetManager for loading assets from the APK.
@@ -247,32 +275,49 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetAssetManag
     _class: JClass,
     asset_manager: JObject,
 ) -> i32 {
-    // Stub: ndk-sys 0.6 does not export AAssetManager_fromJava directly.
-    // Real implementation needs JNI call to get ANativeWindow/AAssetManager from Java Surface.
-    let mgr_ptr: *mut ndk_sys::AAssetManager = std::ptr::null_mut();
-    let _ = env;
-    let _ = asset_manager;
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let env = match env.get_env() {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Failed to get JNIEnv: {:?}", e);
+                return -1i32;
+            }
+        };
 
-    if mgr_ptr.is_null() {
-        eprintln!("Failed to get AAssetManager from Java AssetManager (stub)");
-        return -1;
-    }
+        let mgr_ptr: *mut std::ffi::c_void = unsafe {
+            AAssetManager_fromJava(
+                env.as_mut_ptr() as *mut std::ffi::c_void,
+                asset_manager.into() as *mut std::ffi::c_void,
+            ) as *mut std::ffi::c_void
+        };
 
-    *asset_manager_storage().lock().unwrap() = Some(mgr_ptr as i64);
-
-    let android_source = match android_assets::AndroidAssets::from_raw(mgr_ptr) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to create Android asset source: {e}");
-            return -2;
+        if mgr_ptr.is_null() {
+            eprintln!("Failed to get AAssetManager from Java");
+            return -1;
         }
-    };
 
-    let cache = assets_manager::AssetCache::with_source(android_source);
-    *asset_cache_storage().lock().unwrap() = Some(cache);
+        let android_source = match android_assets::AndroidAssets::from_raw(mgr_ptr) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to create Android asset source: {e}");
+                return -2;
+            }
+        };
 
-    println!("Android AAssetManager set and asset cache initialized");
-    0
+        let cache = assets_manager::AssetCache::with_source(android_source);
+        *asset_cache_storage().lock().unwrap() = Some(cache);
+
+        println!("Android AAssetManager set and asset cache initialized");
+        0
+    }));
+
+    match result {
+        Ok(code) => code,
+        Err(_panic) => {
+            eprintln!("Asset manager setup panicked, caught to prevent crash");
+            -1
+        }
+    }
 }
 
 /// Load an asset from the APK and return its bytes as a jbyteArray.
@@ -317,7 +362,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenLoadAsset<'a>
 }
 
 /// Shutdown the Veloren client and renderer.
-/// Called from Java: `velorenShutdown(clientPtr)`
+/// Called from Java: `velorenShutdown()`
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
     _env: JNIEnv,
@@ -334,6 +379,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
             drop(Box::from_raw(renderer_ptr as *mut renderer::Renderer));
         }
     }
+    *renderer_storage().lock().unwrap() = None;
     *runtime_storage().lock().unwrap() = None;
     *last_tick_storage().lock().unwrap() = None;
 
@@ -345,7 +391,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenShutdown(
 }
 
 /// Set controller inputs from Android touch/joystick.
-/// Called from Java: `velorenSetInput(clientPtr, moveX, moveY, moveZ, action, pressed)`
+/// Called from Java: `velorenSetInput(moveX, moveY, moveZ, action, pressed)`
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     _env: JNIEnv,
@@ -356,40 +402,46 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetInput(
     action: i32,
     pressed: u8,
 ) {
-    let client_guard = client_storage().lock().unwrap();
-    let Some(client_ptr) = client_guard.as_ref().copied() else {
-        return;
-    };
-
-    let input_kind = match action {
-        0 => InputKind::Primary,
-        1 => InputKind::Secondary,
-        2 => InputKind::Block,
-        3 => InputKind::Jump,
-        4 => {
-            // look delta handled separately
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let client_guard = client_storage().lock().unwrap();
+        let Some(client_ptr) = client_guard.as_ref().copied() else {
             return;
+        };
+
+        let input_kind = match action {
+            0 => InputKind::Primary,
+            1 => InputKind::Secondary,
+            2 => InputKind::Block,
+            3 => InputKind::Jump,
+            4 => {
+                // look delta handled separately
+                return;
+            }
+            _ => InputKind::Primary,
+        };
+
+        let client = unsafe { &mut *(client_ptr as *mut Client) };
+        let entity = client.entity();
+        client.handle_input(input_kind, pressed != 0, None, None);
+
+        if let Some(controller) = client
+            .state_mut()
+            .ecs_mut()
+            .write_storage::<Controller>()
+            .get_mut(entity)
+        {
+            controller.inputs.move_dir = vek::Vec2::new(move_x, move_y);
+            controller.inputs.move_z = move_z;
         }
-        _ => InputKind::Primary,
-    };
+    }));
 
-    let client = unsafe { &mut *(client_ptr as *mut Client) };
-    let entity = client.entity();
-    client.handle_input(input_kind, pressed != 0, None, None);
-
-    if let Some(controller) = client
-        .state_mut()
-        .ecs_mut()
-        .write_storage::<Controller>()
-        .get_mut(entity)
-    {
-        controller.inputs.move_dir = vek::Vec2::new(move_x, move_y);
-        controller.inputs.move_z = move_z;
+    if result.is_err() {
+        eprintln!("Set input panicked, caught to prevent crash");
     }
 }
 
 /// Get the current tick count (for debugging).
-/// Called from Java: `velorenGetTick(clientPtr)`
+/// Called from Java: `velorenGetTick()`
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
     _env: JNIEnv,
@@ -406,7 +458,7 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenGetTick(
 }
 
 /// Set mobile performance tier for Android optimizations.
-/// Called from Java: `velorenSetMobilePerfTier(clientPtr, tier: int)`
+/// Called from Java: `velorenSetMobilePerfTier(tier: int)`
 /// tier: 0=None, 1=Low, 2=Medium
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerfTier(
@@ -414,19 +466,25 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetMobilePerf
     _class: JClass,
     tier: i32,
 ) {
-    let mut client_guard = client_storage().lock().unwrap();
-    let Some(ptr) = client_guard.as_mut() else {
-        return;
-    };
-    let client = unsafe { &mut *(*ptr as *mut Client) };
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let mut client_guard = client_storage().lock().unwrap();
+        let Some(ptr) = client_guard.as_mut() else {
+            return;
+        };
+        let client = unsafe { &mut *(*ptr as *mut Client) };
 
-    let perf_tier = match tier {
-        1 => veloren_client::MobilePerfTier::Low,
-        2 => veloren_client::MobilePerfTier::Medium,
-        _ => veloren_client::MobilePerfTier::None,
-    };
+        let perf_tier = match tier {
+            1 => veloren_client::MobilePerfTier::Low,
+            2 => veloren_client::MobilePerfTier::Medium,
+            _ => veloren_client::MobilePerfTier::None,
+        };
 
-    client.set_mobile_perf_tier(perf_tier);
+        client.set_mobile_perf_tier(perf_tier);
+    }));
+
+    if result.is_err() {
+        eprintln!("Set mobile perf tier panicked, caught to prevent crash");
+    }
 }
 
 /// Set weather enabled (rain/snow).
