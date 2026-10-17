@@ -47,7 +47,7 @@ impl Renderer {
             ANativeWindow_fromSurface(env.get_raw(), surface_obj.into_raw())
         };
         // Wrapped immediately: every early return below releases the reference.
-        let native_window_ref = NativeWindowRef(native_window);
+        let native_window_ref = NativeWindowRef(native_window as *mut std::ffi::c_void);
 
         let native_window_ptr = std::ptr::NonNull::new(native_window as *mut std::ffi::c_void)
             .ok_or_else(|| "Failed to create ANativeWindow from Surface".to_string())?;
