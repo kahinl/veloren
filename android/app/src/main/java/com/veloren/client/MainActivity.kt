@@ -13,6 +13,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.io.File
 
 class MainActivity : Activity(), SurfaceHolder.Callback {
 
@@ -206,6 +207,19 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         velorenSetOnDemandAssets(true)
 
         statusText.text = "Veloren: perf tier $perfTier - tap screen to play"
+
+        // Ship a CA trust store for the account auth server: Android has no
+        // system store rustls can read, so copy the bundled PEM and point
+        // SSL_CERT_FILE at it via native code.
+        try {
+            val caFile = File(filesDir, "cacert.pem")
+            assets.open("cacert.pem").use { input ->
+                caFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            velorenSetCaCertPath(caFile.absolutePath)
+        } catch (e: Exception) {
+            statusText.text = "Veloren: CA bundle failed (${e.message})"
+        }
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -352,6 +366,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     external fun velorenInit(serverAddress: String): Long
     external fun velorenLastInitError(): String?
     external fun velorenSetCredentials(username: String, password: String)
+    external fun velorenSetCaCertPath(path: String)
     external fun velorenTick(dt: Float): Int
     external fun velorenSetAssetManager(assetManager: android.content.res.AssetManager): Int
     external fun velorenSetEventCallback(callbackObject: Any): Int

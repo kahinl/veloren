@@ -207,6 +207,26 @@ pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCredential
     };
 }
 
+/// Set the CA certificate bundle used for TLS connections (account auth).
+/// Called from Java: `velorenSetCaCertPath(path)`
+/// Android has no system CA store that rustls can read, so the app copies a
+/// bundled PEM to its files dir and points `SSL_CERT_FILE` at it;
+/// rustls-native-certs (used by the auth client) reads that variable.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_veloren_client_MainActivity_velorenSetCaCertPath(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) {
+    if let Ok(path_str) = env.get_string(&path) {
+        let path_str: String = path_str.into();
+        // SAFETY: called once from `MainActivity.onCreate` before any client
+        // thread exists, so nothing else reads the environment concurrently.
+        unsafe { std::env::set_var("SSL_CERT_FILE", &path_str) };
+        println!("Android CA bundle path set: {path_str}");
+    }
+}
+
 /// Run one tick of the Veloren client.
 /// Called from Java each frame: `velorenTick(dt)`
 /// Returns: i32 (0 on success, -1 on error)
